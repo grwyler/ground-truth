@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ground Truth Readiness MVP</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">GT</div>
+          <div>
+            <strong>Ground Truth</strong>
+            <span>Ready-to-Build</span>
+          </div>
+        </div>
+
+        <nav aria-label="Primary">
+          <button class="nav-item active" data-view="dashboard">
+            <span class="icon" aria-hidden="true">[ ]</span>
+            Dashboard
+          </button>
+          <button class="nav-item" data-view="approvals">
+            <span class="icon" aria-hidden="true">OK</span>
+            Approvals
+          </button>
+          <button class="nav-item" data-view="diff">
+            <span class="icon" aria-hidden="true">DF</span>
+            Version Diff
+          </button>
+          <button class="nav-item" data-view="milestones">
+            <span class="icon" aria-hidden="true">||</span>
+            Milestones
+          </button>
+          <button class="nav-item" data-view="gate">
+            <span class="icon" aria-hidden="true">--</span>
+            Readiness Gate
+          </button>
+        </nav>
+
+        <div class="sidebar-status">
+          <span>Jira export</span>
+          <strong id="sidebarExportState">Blocked</strong>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Project Sentinel Modernization</p>
+            <h1 id="pageTitle">Document Readiness Dashboard</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="ghost-button" data-action="open-diff">Compare v3.1</button>
+            <button class="primary-button" data-action="open-gate">Review Gate</button>
+          </div>
+        </header>
+
+        <section class="view active" id="dashboard" aria-labelledby="pageTitle">
+          <div class="overview-grid">
+            <article class="readiness-hero">
+              <div>
+                <span class="status-pill blocked" id="readinessState">Not Ready</span>
+                <h2>82% document readiness</h2>
+                <p>3 hard blockers are holding the Ready-to-Build package.</p>
+              </div>
+              <div class="score-ring" aria-label="82 percent readiness">
+                <span id="scoreValue">82</span>
+                <small>%</small>
+              </div>
+            </article>
+
+            <article class="metric-card">
+              <span>Requirements</span>
+              <strong>47 / 52</strong>
+              <small>approved or ready for review</small>
+            </article>
+            <article class="metric-card">
+              <span>Traceability</span>
+              <strong>91%</strong>
+              <small>workflow and test links complete</small>
+            </article>
+            <article class="metric-card warning">
+              <span>Pending approval</span>
+              <strong id="pendingCount">6</strong>
+              <small>2 customer, 3 operator, 1 engineering</small>
+            </article>
+          </div>
+
+          <div class="content-grid">
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Document Readiness</h2>
+                <button class="text-button" data-action="open-approvals">Triage approvals</button>
+              </div>
+              <div class="readiness-list" id="readinessList"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Active Blockers</h2>
+                <button class="text-button" data-action="open-gate">Resolve gate</button>
+              </div>
+              <div class="blocker-list">
+                <button class="blocker-item" data-blocker="REQ-114">
+                  <strong>REQ-114 lacks acceptance criteria</strong>
+                  <span>Owner: Engineering Lead</span>
+                </button>
+                <button class="blocker-item" data-blocker="CONOPS-08">
+                  <strong>Operator workflow awaiting v3.1 approval</strong>
+                  <span>Owner: Operator Representative</span>
+                </button>
+                <button class="blocker-item" data-blocker="INT-07">
+                  <strong>Interface dependency missing customer signoff</strong>
+                  <span>Owner: Customer PM</span>
+                </button>
+              </div>
+            </section>
+
+            <section class="panel wide">
+              <div class="panel-heading">
+                <h2>Recent Activity</h2>
+                <button class="text-button" data-action="open-milestones">View timeline</button>
+              </div>
+              <div class="activity-feed">
+                <div><span>9:42 AM</span> Maya Chen requested changes on REQ-114.</div>
+                <div><span>Yesterday</span> AI draft split CONOPS-08 into nominal and degraded workflows.</div>
+                <div><span>Apr 24</span> Engineering approved interface feasibility for INT-03.</div>
+                <div><span>Apr 23</span> Project milestone advanced to Stakeholder Validation.</div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="approvals">
+          <div class="workflow-layout">
+            <section class="approval-queue panel">
+              <div class="panel-heading">
+                <h2>Approval Queue</h2>
+                <span class="count-badge" id="queueCount">6 pending</span>
+              </div>
+              <div id="approvalQueue"></div>
+            </section>
+
+            <section class="approval-detail panel">
+              <div class="detail-kicker" id="approvalKicker">Requirement approval</div>
+              <h2 id="approvalTitle">REQ-114 - Degraded network operations</h2>
+              <p id="approvalBody"></p>
+
+              <div class="approval-meta">
+                <div><span>Owner</span><strong id="approvalOwner"></strong></div>
+                <div><span>Version</span><strong id="approvalVersion"></strong></div>
+                <div><span>Traceability</span><strong id="approvalTrace"></strong></div>
+              </div>
+
+              <div class="comment-box">
+                <label for="approvalComment">Decision note</label>
+                <textarea id="approvalComment" rows="5">Acceptance language needs one more measurable timeout threshold before approval.</textarea>
+              </div>
+
+              <div class="button-row">
+                <button class="ghost-button" data-approval-action="changes">Request Changes</button>
+                <button class="primary-button" data-approval-action="approve">Approve Version</button>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="diff">
+          <div class="diff-layout">
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Version Compare</h2>
+                <span class="status-pill review">v3.0 to v3.1</span>
+              </div>
+              <div class="version-picker">
+                <button class="active" data-diff-tab="requirement">REQ-114</button>
+                <button data-diff-tab="workflow">CONOPS-08</button>
+                <button data-diff-tab="interface">INT-07</button>
+              </div>
+              <div class="diff-summary" id="diffSummary"></div>
+            </section>
+
+            <section class="panel diff-viewer">
+              <div class="panel-heading">
+                <h2 id="diffTitle">Requirement Diff</h2>
+                <button class="text-button" data-action="open-approvals">Send to approval</button>
+              </div>
+              <div class="diff-columns">
+                <article>
+                  <h3>Previous</h3>
+                  <div class="doc-page" id="diffPrevious"></div>
+                </article>
+                <article>
+                  <h3>Current</h3>
+                  <div class="doc-page" id="diffCurrent"></div>
+                </article>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="milestones">
+          <div class="panel">
+            <div class="panel-heading">
+              <h2>Milestone Tracker</h2>
+              <button class="primary-button" id="advanceMilestone">Advance Current Milestone</button>
+            </div>
+            <div class="milestone-track" id="milestoneTrack"></div>
+          </div>
+          <div class="content-grid">
+            <section class="panel">
+              <h2>Current Focus</h2>
+              <div class="focus-card">
+                <span class="status-pill review">Stakeholder Validation</span>
+                <p>Clear remaining approvals, lock versioned requirements, and prepare the certification package.</p>
+              </div>
+            </section>
+            <section class="panel">
+              <h2>Readiness Trend</h2>
+              <div class="trend-bars" aria-label="Readiness trend by week">
+                <span style="height: 42%"></span>
+                <span style="height: 58%"></span>
+                <span style="height: 67%"></span>
+                <span style="height: 74%"></span>
+                <span style="height: 82%"></span>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="gate">
+          <div class="gate-layout">
+            <section class="gate-panel">
+              <span class="status-pill blocked" id="gateStatus">Gate Closed</span>
+              <h2>Ready-to-Build certification is blocked</h2>
+              <p>Resolve every hard blocker or submit a visible risk override before Jira export can open.</p>
+              <div class="gate-actions">
+                <button class="primary-button" id="resolveBlocker">Mark REQ-114 Resolved</button>
+                <button class="ghost-button" id="submitOverride">Submit Risk Override</button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Gate Checks</h2>
+                <span class="count-badge" id="gateCount">3 blockers</span>
+              </div>
+              <div class="gate-checks" id="gateChecks"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <h2>Certification Package</h2>
+                <span class="status-pill blocked" id="exportBadge">Export blocked</span>
+              </div>
+              <div class="package-list">
+                <div><span>CONOPS package</span><strong>Ready</strong></div>
+                <div><span>Requirement baseline</span><strong>Needs approval</strong></div>
+                <div><span>Traceability matrix</span><strong>Ready</strong></div>
+                <div><span>Risk acceptance log</span><strong id="overrideState">None</strong></div>
+              </div>
+              <button class="primary-button full-width disabled" id="jiraExport">Export to Jira</button>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>
