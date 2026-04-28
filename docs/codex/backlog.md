@@ -156,6 +156,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-004
 
+**Status:** Complete.
+
 **Title:** Implement project intake API and project shell UI
 
 **Goal:** Allow a PM to create and view readiness projects.

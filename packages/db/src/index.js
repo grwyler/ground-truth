@@ -8,3 +8,4 @@ export function createPersistenceConfig(env = process.env) {
 
 export * from "./schema/mvp-schema.js";
 export * from "./seed/mvp-seed.js";
+export * from "./repositories/projects.js";

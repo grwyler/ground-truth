@@ -1,31 +1,34 @@
 import { createServer } from "node:http";
+import { createInMemoryProjectRepository } from "../../../packages/db/src/index.js";
 import { getApplicationMetadata } from "../../../packages/domain/src/index.js";
 import { handleAuthRoute } from "./auth/routes.js";
+import { createProjectsRoute, sendJson } from "./routes/projects.js";
 
-export function createApiServer({ metadata = getApplicationMetadata() } = {}) {
-  return createServer((request, response) => {
+export function createApiServer({
+  metadata = getApplicationMetadata(),
+  projectRepository = createInMemoryProjectRepository()
+} = {}) {
+  const handleProjectsRoute = createProjectsRoute({ projectRepository });
+
+  return createServer(async (request, response) => {
     if (handleAuthRoute(request, response)) {
       return;
     }
 
+    if (await handleProjectsRoute(request, response)) {
+      return;
+    }
+
     if (request.method === "GET" && request.url === "/health") {
-      const body = JSON.stringify({
+      sendJson(response, 200, {
         ok: true,
         service: metadata.name,
         stage: metadata.stage
       });
-
-      response.writeHead(200, {
-        "content-type": "application/json; charset=utf-8"
-      });
-      response.end(body);
       return;
     }
 
-    response.writeHead(404, {
-      "content-type": "application/json; charset=utf-8"
-    });
-    response.end(JSON.stringify({ error: "NOT_FOUND" }));
+    sendJson(response, 404, { error: "NOT_FOUND" });
   });
 }
 

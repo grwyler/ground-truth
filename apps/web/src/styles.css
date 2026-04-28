@@ -18,26 +18,21 @@ body {
 
 #app {
   min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 32px;
+  padding: 24px;
 }
 
 .app-shell {
-  width: min(720px, 100%);
+  width: min(1120px, 100%);
   border: 1px solid #d8dee8;
   border-radius: 8px;
   background: #ffffff;
-  padding: 32px;
+  margin: 0 auto;
+  padding: 24px;
 }
 
-.eyebrow {
-  margin: 0 0 12px;
-  color: #596579;
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
+.workspace-header {
+  border-bottom: 1px solid #e2e7ef;
+  padding-bottom: 20px;
 }
 
 h1 {
@@ -57,7 +52,7 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 24px;
+  margin-top: 16px;
 }
 
 .role-actions span {
@@ -67,4 +62,122 @@ h1 {
   font-size: 0.9rem;
   line-height: 1;
   padding: 8px 10px;
+}
+
+.project-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.project-list,
+.project-workspace {
+  min-width: 0;
+}
+
+h2 {
+  margin: 0 0 16px;
+  font-size: 1.15rem;
+  line-height: 1.25;
+}
+
+.project-form {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.project-form label {
+  display: grid;
+  gap: 5px;
+  color: #3d4756;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.project-form input {
+  width: 100%;
+  border: 1px solid #cdd6e3;
+  border-radius: 6px;
+  color: #17202a;
+  font: inherit;
+  padding: 9px 10px;
+}
+
+.project-form button,
+.project-card {
+  border: 1px solid #243244;
+  border-radius: 6px;
+  background: #243244;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.project-form button {
+  text-align: center;
+}
+
+.project-cards {
+  display: grid;
+  gap: 10px;
+}
+
+.project-card {
+  display: grid;
+  gap: 6px;
+  border-color: #d8dee8;
+  background: #f7f8fa;
+  color: #17202a;
+}
+
+.project-card span {
+  color: #596579;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.project-meta {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) 1fr;
+  gap: 12px 16px;
+  margin: 0;
+}
+
+.project-meta dt {
+  color: #596579;
+  font-weight: 700;
+}
+
+.project-meta dd {
+  margin: 0;
+}
+
+.form-error,
+.empty-state {
+  color: #9b1c31;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+@media (max-width: 780px) {
+  #app {
+    padding: 12px;
+  }
+
+  .app-shell {
+    padding: 18px;
+  }
+
+  .project-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .project-meta {
+    grid-template-columns: 1fr;
+  }
 }
