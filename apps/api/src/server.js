@@ -7,6 +7,7 @@ import { getApplicationMetadata } from "../../../packages/domain/src/index.js";
 import { createLocalStorageAdapter } from "../../../packages/storage/src/index.js";
 import { handleAuthRoute } from "./auth/routes.js";
 import { createAiRoute } from "./routes/ai.js";
+import { createDecisionObjectsRoute } from "./routes/decision-objects.js";
 import { createDocumentsRoute } from "./routes/documents.js";
 import { createProjectsRoute, sendJson } from "./routes/projects.js";
 
@@ -19,6 +20,7 @@ export function createApiServer({
   })
 } = {}) {
   const handleAiRoute = createAiRoute({ projectRepository, aiDraftAdapter });
+  const handleDecisionObjectsRoute = createDecisionObjectsRoute({ projectRepository });
   const handleProjectsRoute = createProjectsRoute({ projectRepository });
   const handleDocumentsRoute = createDocumentsRoute({ projectRepository, storageAdapter });
 
@@ -32,6 +34,10 @@ export function createApiServer({
     }
 
     if (await handleDocumentsRoute(request, response)) {
+      return;
+    }
+
+    if (await handleDecisionObjectsRoute(request, response)) {
       return;
     }
 

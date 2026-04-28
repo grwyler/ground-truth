@@ -86,6 +86,15 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
         .map(cloneRecord);
     },
 
+    findDecisionObject(projectId, objectId) {
+      const decisionObject = state.decisionObjects.find(
+        (candidate) =>
+          candidate.project_id === projectId && candidate.object_id === objectId
+      );
+
+      return decisionObject ? cloneRecord(decisionObject) : null;
+    },
+
     findDecisionObjectVersion(objectId, versionNumber) {
       const version = state.decisionObjectVersions.find(
         (candidate) =>
@@ -94,6 +103,36 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
       );
 
       return version ? cloneRecord(version) : null;
+    },
+
+    updateDecisionObjectDraft(decisionObject, version, auditEvent) {
+      const decisionObjectIndex = state.decisionObjects.findIndex(
+        (candidate) => candidate.object_id === decisionObject.object_id
+      );
+
+      if (decisionObjectIndex === -1) {
+        throw new Error(`Unknown decision object: ${decisionObject.object_id}`);
+      }
+
+      const versionIndex = state.decisionObjectVersions.findIndex(
+        (candidate) => candidate.version_id === version.version_id
+      );
+
+      if (versionIndex === -1) {
+        throw new Error(`Unknown decision object version: ${version.version_id}`);
+      }
+
+      state.decisionObjects[decisionObjectIndex] = cloneRecord(decisionObject);
+      state.decisionObjectVersions[versionIndex] = cloneRecord(version);
+
+      if (auditEvent) {
+        state.auditEvents.push(cloneRecord(auditEvent));
+      }
+
+      return {
+        decisionObject: cloneRecord(decisionObject),
+        version: cloneRecord(version)
+      };
     },
 
     createDecisionDrafts(decisionObjects, decisionObjectVersions) {

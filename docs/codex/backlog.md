@@ -315,6 +315,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-007
 
+**Status:** Complete.
+
 **Title:** Build draft review workspace
 
 **Goal:** Let users review, edit, accept, reject, and organize AI-generated draft objects in a document-like workspace.

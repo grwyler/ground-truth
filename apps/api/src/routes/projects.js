@@ -107,7 +107,7 @@ export function sendJson(response, statusCode, body) {
   response.end(JSON.stringify(body));
 }
 
-async function readJsonBody(request) {
+export async function readJsonBody(request) {
   let rawBody = "";
 
   for await (const chunk of request) {

@@ -252,6 +252,18 @@ h3 {
   margin-top: 16px;
 }
 
+.draft-review-workspace {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  margin-top: 16px;
+}
+
+.draft-section-nav {
+  display: grid;
+  gap: 12px;
+}
+
 .draft-group {
   border: 1px solid #d8dee8;
   border-radius: 6px;
@@ -270,15 +282,125 @@ h4 {
   background: #f7f8fa;
   border: 1px solid #e2e7ef;
   border-radius: 6px;
+  color: #17202a;
+  cursor: pointer;
   display: grid;
   gap: 4px;
+  font: inherit;
   padding: 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.draft-item.selected {
+  border-color: #19636b;
+  background: #eef8f7;
 }
 
 .draft-item span {
   color: #596579;
   font-size: 0.82rem;
   font-weight: 700;
+}
+
+.draft-editor {
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.draft-editor-header {
+  align-items: start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.draft-badge {
+  border: 1px solid #8fb8a7;
+  border-radius: 6px;
+  color: #23543f;
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 5px 8px;
+}
+
+.draft-edit-form {
+  display: grid;
+  gap: 10px;
+}
+
+.draft-edit-form label {
+  display: grid;
+  gap: 6px;
+  color: #3d4756;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.draft-edit-form input,
+.draft-edit-form textarea {
+  border: 1px solid #cdd6e3;
+  border-radius: 6px;
+  color: #17202a;
+  font: inherit;
+  line-height: 1.45;
+  padding: 9px 10px;
+  width: 100%;
+}
+
+.draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.draft-actions button,
+.danger-action {
+  border: 1px solid #243244;
+  border-radius: 6px;
+  background: #243244;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 9px 12px;
+}
+
+.danger-action {
+  border-color: #9b1c31;
+  background: #9b1c31;
+}
+
+.draft-actions button:disabled {
+  border-color: #cdd6e3;
+  background: #eef2f6;
+  color: #596579;
+  cursor: not-allowed;
+}
+
+.draft-overlay {
+  border-top: 1px solid #e2e7ef;
+  display: grid;
+  gap: 8px 12px;
+  grid-template-columns: minmax(120px, 160px) 1fr;
+  margin: 0;
+  padding-top: 12px;
+}
+
+.draft-overlay dt {
+  color: #596579;
+  font-weight: 800;
+}
+
+.draft-overlay dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .form-error,
@@ -310,6 +432,11 @@ h4 {
   }
 
   .draft-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .draft-review-workspace,
+  .draft-overlay {
     grid-template-columns: 1fr;
   }
 }

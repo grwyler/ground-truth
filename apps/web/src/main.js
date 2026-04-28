@@ -1,16 +1,21 @@
 import {
   AI_SYSTEM_ACTOR,
+  DRAFT_REVIEW_STATUSES,
   DOCUMENT_UPLOAD_STATUSES,
   DOCUMENT_VALIDATION_ERRORS,
+  acceptDecisionDraft,
   buildAiGenerationAuditEvent,
+  buildDecisionObjectUpdate,
   buildDocumentRecord,
   buildQueuedAiGenerationJob,
+  isRejectedDecisionDraft,
   isSupportedDocumentFileName,
   getApplicationMetadata,
   markAiGenerationJobCompleted,
   markAiGenerationJobFailed,
   markAiGenerationJobRunning,
   normalizeAiDraftOutput,
+  rejectDecisionDraft,
   toAiGenerationJobSummary,
   toDecisionObjectSummary,
   toDocumentSummary,
@@ -196,8 +201,7 @@ export function createLocalAiGenerationService(
   const auditEvents = [];
   let draftIdSequence = 0;
 
-  return Object.freeze({
-    listDecisionObjects(projectId) {
+  function listDecisionObjects(projectId) {
       return decisionObjects
         .filter((decisionObject) => decisionObject.project_id === projectId)
         .map((decisionObject) => {
@@ -209,6 +213,107 @@ export function createLocalAiGenerationService(
 
           return toDecisionObjectSummary(decisionObject, version);
         });
+  }
+
+  function findDraft(projectId, objectId) {
+    const decisionObject = decisionObjects.find(
+      (candidate) => candidate.project_id === projectId && candidate.object_id === objectId
+    );
+
+    if (!decisionObject) {
+      return null;
+    }
+
+    const version = decisionObjectVersions.find(
+      (candidate) =>
+        candidate.object_id === decisionObject.object_id &&
+        candidate.version_number === decisionObject.current_version
+    );
+
+    return { decisionObject, version };
+  }
+
+  function persistDraftUpdate(update) {
+    const objectIndex = decisionObjects.findIndex(
+      (candidate) => candidate.object_id === update.decisionObject.object_id
+    );
+    const versionIndex = decisionObjectVersions.findIndex(
+      (candidate) => candidate.version_id === update.version.version_id
+    );
+
+    decisionObjects[objectIndex] = update.decisionObject;
+    decisionObjectVersions[versionIndex] = update.version;
+
+    return toDecisionObjectSummary(update.decisionObject, update.version);
+  }
+
+  return Object.freeze({
+    listDecisionObjects,
+
+    updateDraft(projectId, objectId, input, actor) {
+      const draft = findDraft(projectId, objectId);
+
+      if (!draft) {
+        return { ok: false, error: "Draft object was not found." };
+      }
+
+      const update = buildDecisionObjectUpdate(
+        draft.decisionObject,
+        draft.version,
+        input,
+        actor
+      );
+
+      if (!update.ok) {
+        return {
+          ok: false,
+          error: "Draft title and structured content are required."
+        };
+      }
+
+      return {
+        ok: true,
+        decisionObject: persistDraftUpdate(update)
+      };
+    },
+
+    acceptDraft(projectId, objectId, actor) {
+      const draft = findDraft(projectId, objectId);
+
+      if (!draft) {
+        return { ok: false, error: "Draft object was not found." };
+      }
+
+      const update = acceptDecisionDraft(draft.decisionObject, draft.version, actor);
+
+      if (!update.ok) {
+        return { ok: false, error: "Draft could not be accepted." };
+      }
+
+      return {
+        ok: true,
+        decisionObject: persistDraftUpdate(update)
+      };
+    },
+
+    rejectDraft(projectId, objectId, actor) {
+      const draft = findDraft(projectId, objectId);
+
+      if (!draft) {
+        return { ok: false, error: "Draft object was not found." };
+      }
+
+      const update = rejectDecisionDraft(draft.decisionObject, draft.version, actor);
+
+      if (!update.ok) {
+        return { ok: false, error: "Draft could not be rejected." };
+      }
+
+      return {
+        ok: true,
+        decisionObject: persistDraftUpdate(update),
+        excludedFromReadiness: isRejectedDecisionDraft(update.decisionObject, update.version)
+      };
     },
 
     async generateDraft(projectId, actor) {
@@ -266,7 +371,7 @@ export function createLocalAiGenerationService(
         return {
           ok: true,
           job: toAiGenerationJobSummary(completed),
-          decisionObjects: this.listDecisionObjects(projectId)
+          decisionObjects: listDecisionObjects(projectId)
         };
       } catch (error) {
         const failed = markAiGenerationJobFailed(runningJob, error.message);
@@ -595,48 +700,299 @@ function renderAiGenerationPanel(
     return panel;
   }
 
-  const groups = [
-    ["Workflows", "workflow"],
-    ["Requirements", "requirement"],
-    ["Tests", "test"],
-    ["Risks", "risk"]
-  ];
+  panel.append(
+    renderDraftReviewWorkspace(
+      project,
+      currentUser,
+      aiGenerationService,
+      drafts,
+      onChange
+    )
+  );
+  return panel;
+}
 
-  const draftGrid = document.createElement("div");
-  draftGrid.className = "draft-grid";
+function renderDraftReviewWorkspace(
+  project,
+  currentUser,
+  aiGenerationService,
+  drafts,
+  onChange
+) {
+  const workspace = document.createElement("div");
+  workspace.className = "draft-review-workspace";
+  workspace.setAttribute("aria-label", "Draft review workspace");
 
-  for (const [label, type] of groups) {
-    const group = document.createElement("section");
-    group.className = "draft-group";
-    const groupHeading = document.createElement("h4");
-    groupHeading.textContent = label;
-    group.append(groupHeading);
+  const sectionNav = document.createElement("div");
+  sectionNav.className = "draft-section-nav";
 
-    const items = drafts.filter((draft) => draft.type === type);
+  const editor = document.createElement("section");
+  editor.className = "draft-editor";
+  editor.setAttribute("aria-label", "Draft editor");
 
-    if (items.length === 0) {
-      const empty = document.createElement("p");
-      empty.className = "empty-state neutral";
-      empty.textContent = "None yet.";
-      group.append(empty);
-    }
+  const editableDrafts = drafts.filter(
+    (draft) => draft.content?.ai_review_status !== DRAFT_REVIEW_STATUSES.REJECTED
+  );
+  const firstDraft = editableDrafts[0] ?? drafts[0];
+  let selectedObjectId = firstDraft.objectId;
 
-    for (const draft of items) {
-      const item = document.createElement("article");
-      item.className = "draft-item";
-      const title = document.createElement("strong");
-      title.textContent = draft.title;
-      const meta = document.createElement("span");
-      meta.textContent = `${formatStatus(draft.status)} | AI-generated`;
-      item.append(title, meta);
-      group.append(item);
-    }
-
-    draftGrid.append(group);
+  function selectDraft(objectId) {
+    selectedObjectId = objectId;
+    renderNavigation();
+    renderEditor();
   }
 
-  panel.append(draftGrid);
-  return panel;
+  function renderNavigation() {
+    sectionNav.innerHTML = "";
+
+    const groups = [
+      ["Workflows", "workflow"],
+      ["Requirements", "requirement"],
+      ["Tests", "test"],
+      ["Risks", "risk"]
+    ];
+
+    for (const [label, type] of groups) {
+      const group = document.createElement("section");
+      group.className = "draft-group";
+      const groupHeading = document.createElement("h4");
+      groupHeading.textContent = label;
+      group.append(groupHeading);
+
+      const items = drafts.filter((draft) => draft.type === type);
+
+      if (items.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "empty-state neutral";
+        empty.textContent = "None yet.";
+        group.append(empty);
+      }
+
+      for (const draft of items) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className =
+          draft.objectId === selectedObjectId ? "draft-item selected" : "draft-item";
+        button.addEventListener("click", () => selectDraft(draft.objectId));
+
+        const title = document.createElement("strong");
+        title.textContent = draft.title;
+        const meta = document.createElement("span");
+        meta.textContent = formatDraftMeta(draft);
+        button.append(title, meta);
+        group.append(button);
+      }
+
+      sectionNav.append(group);
+    }
+  }
+
+  function renderEditor() {
+    editor.innerHTML = "";
+    const draft = drafts.find((candidate) => candidate.objectId === selectedObjectId);
+
+    if (!draft) {
+      const empty = document.createElement("p");
+      empty.className = "empty-state neutral";
+      empty.textContent = "No draft selected.";
+      editor.append(empty);
+      return;
+    }
+
+    const header = document.createElement("div");
+    header.className = "draft-editor-header";
+    const heading = document.createElement("h4");
+    heading.textContent = draft.title;
+    const badge = document.createElement("span");
+    badge.className = "draft-badge";
+    badge.textContent = formatDraftReviewStatus(draft);
+    header.append(heading, badge);
+
+    const form = document.createElement("form");
+    form.className = "draft-edit-form";
+
+    const titleField = createInput("Title", "title", true);
+    titleField.querySelector("input").value = draft.title;
+
+    const contentField = document.createElement("label");
+    contentField.textContent = "Content";
+    const contentArea = document.createElement("textarea");
+    contentArea.name = "content";
+    contentArea.rows = 8;
+    contentArea.required = true;
+    contentArea.value = draftContentToEditableText(draft);
+    contentField.append(contentArea);
+
+    const error = document.createElement("p");
+    error.className = "form-error";
+    error.setAttribute("role", "alert");
+
+    const actions = document.createElement("div");
+    actions.className = "draft-actions";
+    const save = document.createElement("button");
+    save.type = "submit";
+    save.textContent = "Save Draft";
+    save.disabled = !currentUser.canEditProject;
+    const accept = document.createElement("button");
+    accept.type = "button";
+    accept.className = "secondary-action";
+    accept.textContent = "Accept";
+    accept.disabled = !currentUser.canEditProject;
+    const reject = document.createElement("button");
+    reject.type = "button";
+    reject.className = "danger-action";
+    reject.textContent = "Reject";
+    reject.disabled = !currentUser.canEditProject;
+    actions.append(save, accept, reject);
+
+    form.append(titleField, contentField, error, actions);
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const result = aiGenerationService.updateDraft(
+        project.projectId,
+        draft.objectId,
+        {
+          title: String(new FormData(form).get("title") ?? ""),
+          content: editableTextToDraftContent(draft, contentArea.value)
+        },
+        currentUser.actor
+      );
+
+      if (!result.ok) {
+        error.textContent = result.error;
+        return;
+      }
+
+      onChange();
+    });
+
+    accept.addEventListener("click", () => {
+      const result = aiGenerationService.acceptDraft(
+        project.projectId,
+        draft.objectId,
+        currentUser.actor
+      );
+
+      if (!result.ok) {
+        error.textContent = result.error;
+        return;
+      }
+
+      onChange();
+    });
+
+    reject.addEventListener("click", () => {
+      const result = aiGenerationService.rejectDraft(
+        project.projectId,
+        draft.objectId,
+        currentUser.actor
+      );
+
+      if (!result.ok) {
+        error.textContent = result.error;
+        return;
+      }
+
+      onChange();
+    });
+
+    const overlay = renderDraftOverlay(draft);
+    editor.append(header, form, overlay);
+  }
+
+  renderNavigation();
+  renderEditor();
+  workspace.append(sectionNav, editor);
+  return workspace;
+}
+
+function renderDraftOverlay(draft) {
+  const overlay = document.createElement("aside");
+  overlay.className = "draft-overlay";
+  overlay.setAttribute("aria-label", "Draft details");
+
+  const sourceDocumentIds = draft.content?.source_document_ids ?? [];
+  const rows = [
+    ["Owner", draft.ownerId ?? "Ownership needed"],
+    ["Status", formatStatus(draft.status)],
+    ["Version", `v${draft.currentVersion}`],
+    ["Source", sourceDocumentIds.length > 0 ? sourceDocumentIds.join(", ") : "No source reference"],
+    ["Required action", getDraftRequiredAction(draft)]
+  ];
+
+  for (const [label, value] of rows) {
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const description = document.createElement("dd");
+    description.textContent = value;
+    overlay.append(term, description);
+  }
+
+  return overlay;
+}
+
+function draftContentToEditableText(draft) {
+  const content = draft.content ?? {};
+
+  for (const key of ["summary", "requirement", "risk", "mitigation"]) {
+    if (typeof content[key] === "string" && content[key].trim()) {
+      return content[key];
+    }
+  }
+
+  if (Array.isArray(content.acceptance_criteria)) {
+    return content.acceptance_criteria.join("\n");
+  }
+
+  return "";
+}
+
+function editableTextToDraftContent(draft, text) {
+  const value = text.trim();
+
+  if (draft.type === "workflow") {
+    return { summary: value };
+  }
+
+  if (draft.type === "requirement") {
+    return { requirement: value };
+  }
+
+  if (draft.type === "test") {
+    return {
+      acceptance_criteria: value
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+    };
+  }
+
+  if (draft.type === "risk") {
+    return { risk: value };
+  }
+
+  return { summary: value };
+}
+
+function formatDraftMeta(draft) {
+  return `${formatDraftReviewStatus(draft)} | v${draft.currentVersion}`;
+}
+
+function formatDraftReviewStatus(draft) {
+  return formatStatus(draft.content?.ai_review_status ?? DRAFT_REVIEW_STATUSES.SUGGESTED);
+}
+
+function getDraftRequiredAction(draft) {
+  if (draft.content?.ai_review_status === DRAFT_REVIEW_STATUSES.ACCEPTED) {
+    return draft.ownerId ? "Ready for ownership handoff" : "Assign an owner";
+  }
+
+  if (draft.content?.ai_review_status === DRAFT_REVIEW_STATUSES.REJECTED) {
+    return "Excluded from readiness";
+  }
+
+  return "Review, edit, accept, or reject";
 }
 
 function formatDocumentValidationError(error) {

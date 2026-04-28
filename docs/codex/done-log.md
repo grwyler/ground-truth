@@ -1,5 +1,14 @@
 # Done Log
 
+## 2026-04-28 - MVP-007
+
+- Added draft review domain helpers for editing generated draft content, accepting drafts into the active Draft set, rejecting drafts, and marking rejected drafts as excluded from readiness.
+- Added decision object API routes for listing project decision objects, editing draft content, accepting drafts, and rejecting drafts with role-based authorization and audit events.
+- Extended the in-memory project repository with decision object lookup and draft update persistence.
+- Reworked the web AI draft area into a document-like review workspace with grouped Workflows, Requirements, Tests, and Risks; editable content; version/source/status/owner details; and Accept/Reject controls.
+- Added unit/API coverage for draft edit, accept, reject, readiness exclusion, audit creation, and unauthorized edit protection.
+- Verified with `npm test`, `npm run lint`, `npm run typecheck`, and `npm run build`.
+
 ## 2026-04-28 - MVP-006
 
 - Added a deterministic AI draft adapter boundary that converts uploaded documents into draft Workflow, Requirement, Test, and Risk candidates.
