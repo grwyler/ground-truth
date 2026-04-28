@@ -8,6 +8,7 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
     aiGenerationJobs: (seedData.aiGenerationJobs ?? []).map(cloneRecord),
     decisionObjects: (seedData.decisionObjects ?? []).map(cloneRecord),
     decisionObjectVersions: (seedData.decisionObjectVersions ?? []).map(cloneRecord),
+    traceLinks: (seedData.traceLinks ?? []).map(cloneRecord),
     approvals: (seedData.approvals ?? []).map(cloneRecord),
     users: (seedData.users ?? defaultSeedData.users).map(cloneRecord),
     roleAssignments: (seedData.roleAssignments ?? defaultSeedData.roleAssignments).map(cloneRecord),
@@ -120,6 +121,54 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
       return state.approvals
         .filter((approval) => approval.object_id === objectId)
         .map(cloneRecord);
+    },
+
+    listTraceLinks(projectId, objectId) {
+      return state.traceLinks
+        .filter(
+          (traceLink) =>
+            traceLink.project_id === projectId &&
+            (objectId === undefined ||
+              traceLink.source_object_id === objectId ||
+              traceLink.target_object_id === objectId)
+        )
+        .map(cloneRecord);
+    },
+
+    findTraceLink(projectId, linkId) {
+      const traceLink = state.traceLinks.find(
+        (candidate) => candidate.project_id === projectId && candidate.link_id === linkId
+      );
+
+      return traceLink ? cloneRecord(traceLink) : null;
+    },
+
+    createTraceLink(traceLink, auditEvent) {
+      state.traceLinks.push(cloneRecord(traceLink));
+
+      if (auditEvent) {
+        state.auditEvents.push(cloneRecord(auditEvent));
+      }
+
+      return cloneRecord(traceLink);
+    },
+
+    deleteTraceLink(projectId, linkId, auditEvent) {
+      const traceLinkIndex = state.traceLinks.findIndex(
+        (candidate) => candidate.project_id === projectId && candidate.link_id === linkId
+      );
+
+      if (traceLinkIndex === -1) {
+        return null;
+      }
+
+      const [deleted] = state.traceLinks.splice(traceLinkIndex, 1);
+
+      if (auditEvent) {
+        state.auditEvents.push(cloneRecord(auditEvent));
+      }
+
+      return cloneRecord(deleted);
     },
 
     listProjectAssignableOwners(projectId) {

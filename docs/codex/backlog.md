@@ -471,6 +471,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-010
 
+**Status:** Complete.
+
 **Title:** Implement traceability link management
 
 **Goal:** Allow users to link requirements to source workflows and tests/acceptance criteria.

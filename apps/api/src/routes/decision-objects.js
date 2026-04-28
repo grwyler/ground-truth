@@ -8,11 +8,14 @@ import {
   buildDecisionObjectUpdate,
   buildOwnerAssignment,
   buildOwnerAssignmentAuditEvent,
+  buildTraceLinkAuditEvent,
+  buildTraceLinkCreate,
   isRejectedDecisionDraft,
   rejectDecisionDraft,
   toAssignableOwnerSummary,
   toDecisionObjectSummary,
-  toDecisionObjectVersionSummary
+  toDecisionObjectVersionSummary,
+  toTraceLinkSummary
 } from "../../../../packages/domain/src/index.js";
 import { resolveLocalSession } from "../auth/session.js";
 import { readJsonBody, sendJson } from "./projects.js";
@@ -139,6 +142,104 @@ export function createDecisionObjectsRoute({ projectRepository, now, idGenerator
           decisionObject: toDecisionObjectSummary(decisionObject, version)
         });
         return true;
+      }
+
+      if (pathParts.length >= 7 && pathParts[6] === "links") {
+        if (request.method === "GET" && pathParts.length === 7) {
+          const authorization = authorize(session.actor, PERMISSIONS.READ_PROJECT);
+
+          if (!authorization.allowed) {
+            sendJson(response, 403, { error: "FORBIDDEN" });
+            return true;
+          }
+
+          sendJson(response, 200, {
+            traceLinks: listTraceLinkSummaries(projectRepository, projectId, objectId)
+          });
+          return true;
+        }
+
+        if (request.method === "POST" && pathParts.length === 7) {
+          const authorization = authorize(session.actor, PERMISSIONS.EDIT_PROJECT);
+
+          if (!authorization.allowed) {
+            sendJson(response, 403, { error: "FORBIDDEN" });
+            return true;
+          }
+
+          const body = await readJsonBody(request);
+          const targetObjectId = body.targetObjectId ?? body.target_object_id;
+          const targetObject = projectRepository.findDecisionObject(projectId, targetObjectId);
+          const traceLinkCreate = buildTraceLinkCreate(
+            decisionObject,
+            targetObject,
+            body,
+            session.actor,
+            { idGenerator, now }
+          );
+
+          if (!traceLinkCreate.ok) {
+            sendJson(response, 400, {
+              error: "VALIDATION_ERROR",
+              details: traceLinkCreate.validation.errors
+            });
+            return true;
+          }
+
+          const auditEvent = buildTraceLinkAuditEvent(
+            traceLinkCreate.traceLink,
+            session.actor,
+            "created",
+            { idGenerator, now }
+          );
+          const traceLink = projectRepository.createTraceLink(
+            traceLinkCreate.traceLink,
+            auditEvent
+          );
+
+          sendJson(response, 201, {
+            traceLink: toTraceLinkSummary(traceLink, decisionObject, targetObject)
+          });
+          return true;
+        }
+
+        if (request.method === "DELETE" && pathParts.length === 8) {
+          const authorization = authorize(session.actor, PERMISSIONS.EDIT_PROJECT);
+
+          if (!authorization.allowed) {
+            sendJson(response, 403, { error: "FORBIDDEN" });
+            return true;
+          }
+
+          const traceLink = projectRepository.findTraceLink(projectId, pathParts[7]);
+
+          if (
+            !traceLink ||
+            (traceLink.source_object_id !== objectId && traceLink.target_object_id !== objectId)
+          ) {
+            sendJson(response, 404, { error: "TRACE_LINK_NOT_FOUND" });
+            return true;
+          }
+
+          const auditEvent = buildTraceLinkAuditEvent(traceLink, session.actor, "deleted", {
+            idGenerator,
+            now
+          });
+          const deletedTraceLink = projectRepository.deleteTraceLink(
+            projectId,
+            pathParts[7],
+            auditEvent
+          );
+
+          sendJson(response, 200, {
+            traceLink: toTraceLinkSummary(
+              deletedTraceLink,
+              projectRepository.findDecisionObject(projectId, deletedTraceLink.source_object_id),
+              projectRepository.findDecisionObject(projectId, deletedTraceLink.target_object_id)
+            )
+          });
+          return true;
+        }
       }
 
       if (request.method === "GET" && pathParts.length === 7 && pathParts[6] === "versions") {
@@ -344,5 +445,15 @@ function listDecisionObjectSummaries(projectRepository, projectId) {
 function listAssignableOwnerSummaries(projectRepository, projectId) {
   return (projectRepository.listProjectAssignableOwners?.(projectId) ?? []).map(
     ({ user, roleAssignment }) => toAssignableOwnerSummary(user, roleAssignment)
+  );
+}
+
+function listTraceLinkSummaries(projectRepository, projectId, objectId) {
+  return (projectRepository.listTraceLinks?.(projectId, objectId) ?? []).map((traceLink) =>
+    toTraceLinkSummary(
+      traceLink,
+      projectRepository.findDecisionObject(projectId, traceLink.source_object_id),
+      projectRepository.findDecisionObject(projectId, traceLink.target_object_id)
+    )
   );
 }

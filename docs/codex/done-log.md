@@ -1,5 +1,14 @@
 # Done Log
 
+## 2026-04-28 - MVP-010
+
+- Added traceability domain helpers for MVP relationship validation, mandatory readiness-link detection, trace link summaries, and create/delete audit event details.
+- Extended the in-memory repository with active trace link list/create/delete/read behavior while preserving link removals in the audit stream.
+- Added `GET`, `POST`, and `DELETE` support under `/api/v1/projects/{projectId}/decision-objects/{objectId}/links` with project read/edit authorization.
+- Added a focused browser-local traceability panel for requirement objects showing missing workflow/test links, active links, add controls, and remove actions.
+- Added unit/API coverage for requirement-to-workflow links, requirement-to-test links, invalid relationship rejection, unsupported relationship rejection, unauthorized API writes, deletion, audit records, and local workspace persistence.
+- Verified with `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+
 ## 2026-04-28 - MVP-009
 
 - Added ownership assignment domain helpers for validating project-assigned owners, restricting owner changes to Draft/In Review objects, and producing owner-change audit details.

@@ -23,3 +23,4 @@ export * from "./models/index.js";
 export * from "./ownership.js";
 export * from "./projects.js";
 export * from "./roles.js";
+export * from "./traceability.js";

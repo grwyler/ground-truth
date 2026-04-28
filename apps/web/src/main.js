@@ -1,8 +1,10 @@
 import {
   AI_SYSTEM_ACTOR,
+  DECISION_OBJECT_TYPES,
   DRAFT_REVIEW_STATUSES,
   DOCUMENT_UPLOAD_STATUSES,
   DOCUMENT_VALIDATION_ERRORS,
+  TRACE_RELATIONSHIP_TYPES,
   acceptDecisionDraft,
   buildAiGenerationAuditEvent,
   buildDecisionObjectCreate,
@@ -10,6 +12,7 @@ import {
   buildOwnerAssignment,
   buildDocumentRecord,
   buildQueuedAiGenerationJob,
+  buildTraceLinkCreate,
   isRejectedDecisionDraft,
   isSupportedDocumentFileName,
   getApplicationMetadata,
@@ -22,7 +25,8 @@ import {
   toAiGenerationJobSummary,
   toDecisionObjectSummary,
   toDocumentSummary,
-  toProjectSummary
+  toProjectSummary,
+  toTraceLinkSummary
 } from "../../../packages/domain/src/index.js";
 import { createMvpSeedData } from "../../../packages/db/src/index.js";
 import { createDeterministicDraftAdapter } from "../../../packages/ai/src/index.js";
@@ -201,6 +205,7 @@ export function createLocalAiGenerationService(
   const jobs = [];
   const decisionObjects = [];
   const decisionObjectVersions = [];
+  const traceLinks = [];
   const auditEvents = [];
   let draftIdSequence = 0;
 
@@ -255,6 +260,22 @@ export function createLocalAiGenerationService(
     return toDecisionObjectSummary(update.decisionObject, update.version);
   }
 
+  function listTraceLinks(projectId, objectId) {
+    return traceLinks
+      .filter(
+        (traceLink) =>
+          traceLink.project_id === projectId &&
+          (traceLink.source_object_id === objectId || traceLink.target_object_id === objectId)
+      )
+      .map((traceLink) =>
+        toTraceLinkSummary(
+          traceLink,
+          decisionObjects.find((candidate) => candidate.object_id === traceLink.source_object_id),
+          decisionObjects.find((candidate) => candidate.object_id === traceLink.target_object_id)
+        )
+      );
+  }
+
   function listAssignableOwners() {
     return SEEDED_MVP_USERS.map((user) => ({
       userId: user.id,
@@ -268,6 +289,8 @@ export function createLocalAiGenerationService(
     listDecisionObjects,
 
     listAssignableOwners,
+
+    listTraceLinks,
 
     createDecisionObject(projectId, input, actor) {
       const created = buildDecisionObjectCreate(
@@ -357,6 +380,46 @@ export function createLocalAiGenerationService(
           version: draft.version
         })
       };
+    },
+
+    createTraceLink(projectId, sourceObjectId, input, actor) {
+      const source = findDraft(projectId, sourceObjectId)?.decisionObject;
+      const target = findDraft(projectId, input.targetObjectId)?.decisionObject;
+      const result = buildTraceLinkCreate(source, target, input, actor, {
+        idGenerator: (kind) => {
+          draftIdSequence += 1;
+          return `local-${kind}-${draftIdSequence}`;
+        }
+      });
+
+      if (!result.ok) {
+        return { ok: false, error: "Select a valid traceability relationship." };
+      }
+
+      traceLinks.push(result.traceLink);
+
+      return {
+        ok: true,
+        traceLink: toTraceLinkSummary(result.traceLink, source, target)
+      };
+    },
+
+    deleteTraceLink(projectId, objectId, linkId) {
+      const index = traceLinks.findIndex(
+        (traceLink) =>
+          traceLink.project_id === projectId &&
+          traceLink.link_id === linkId &&
+          (traceLink.source_object_id === objectId ||
+            traceLink.target_object_id === objectId)
+      );
+
+      if (index === -1) {
+        return { ok: false, error: "Trace link was not found." };
+      }
+
+      traceLinks.splice(index, 1);
+
+      return { ok: true };
     },
 
     acceptDraft(projectId, objectId, actor) {
@@ -1063,14 +1126,187 @@ function renderDraftReviewWorkspace(
       onChange();
     });
 
+    const traceabilityPanel = renderTraceabilityPanel(
+      project,
+      draft,
+      drafts,
+      currentUser,
+      aiGenerationService,
+      onChange,
+      error
+    );
     const overlay = renderDraftOverlay(draft, aiGenerationService.listAssignableOwners());
-    editor.append(header, form, overlay);
+    editor.append(header, form, traceabilityPanel, overlay);
   }
 
   renderNavigation();
   renderEditor();
   workspace.append(sectionNav, editor);
   return workspace;
+}
+
+function renderTraceabilityPanel(
+  project,
+  draft,
+  drafts,
+  currentUser,
+  aiGenerationService,
+  onChange,
+  sharedError
+) {
+  const panel = document.createElement("section");
+  panel.className = "traceability-panel";
+  panel.setAttribute("aria-label", "Traceability links");
+
+  const heading = document.createElement("h4");
+  heading.textContent = "Traceability";
+  panel.append(heading);
+
+  if (draft.type !== DECISION_OBJECT_TYPES.REQUIREMENT) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state neutral";
+    empty.textContent = "Traceability links are managed from requirements.";
+    panel.append(empty);
+    return panel;
+  }
+
+  const links = aiGenerationService.listTraceLinks(project.projectId, draft.objectId);
+  const hasWorkflowLink = links.some(
+    (link) =>
+      link.sourceObjectId === draft.objectId &&
+      link.relationshipType === TRACE_RELATIONSHIP_TYPES.DERIVED_FROM &&
+      link.targetType === DECISION_OBJECT_TYPES.WORKFLOW
+  );
+  const hasTestLink = links.some(
+    (link) =>
+      link.sourceObjectId === draft.objectId &&
+      link.relationshipType === TRACE_RELATIONSHIP_TYPES.VALIDATED_BY &&
+      link.targetType === DECISION_OBJECT_TYPES.TEST
+  );
+
+  const requiredList = document.createElement("ul");
+  requiredList.className = "trace-required-list";
+  for (const [label, isComplete] of [
+    ["Workflow link", hasWorkflowLink],
+    ["Acceptance criteria/test link", hasTestLink]
+  ]) {
+    const item = document.createElement("li");
+    item.textContent = `${label}: ${isComplete ? "Linked" : "Missing"}`;
+    item.className = isComplete ? "trace-complete" : "trace-missing";
+    requiredList.append(item);
+  }
+  panel.append(requiredList);
+
+  const linkList = document.createElement("ul");
+  linkList.className = "trace-link-list";
+  for (const link of links) {
+    const item = document.createElement("li");
+    const label = document.createElement("span");
+    label.textContent = `${formatRelationship(link.relationshipType)} -> ${
+      link.targetTitle ?? link.targetObjectId
+    }`;
+    item.append(label);
+
+    if (currentUser.canEditProject) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "secondary-action compact-action";
+      remove.textContent = "Remove";
+      remove.addEventListener("click", () => {
+        const result = aiGenerationService.deleteTraceLink(
+          project.projectId,
+          draft.objectId,
+          link.linkId
+        );
+
+        if (!result.ok) {
+          sharedError.textContent = result.error;
+          return;
+        }
+
+        onChange();
+      });
+      item.append(remove);
+    }
+
+    linkList.append(item);
+  }
+
+  if (links.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state neutral";
+    empty.textContent = "No active trace links.";
+    panel.append(empty);
+  } else {
+    panel.append(linkList);
+  }
+
+  if (!currentUser.canEditProject) {
+    return panel;
+  }
+
+  const form = document.createElement("form");
+  form.className = "trace-link-form";
+
+  const relationshipField = document.createElement("label");
+  relationshipField.textContent = "Relationship";
+  const relationshipSelect = document.createElement("select");
+  relationshipSelect.name = "relationshipType";
+  for (const [label, value] of [
+    ["Derived from workflow", TRACE_RELATIONSHIP_TYPES.DERIVED_FROM],
+    ["Validated by test", TRACE_RELATIONSHIP_TYPES.VALIDATED_BY],
+    ["Depends on", TRACE_RELATIONSHIP_TYPES.DEPENDS_ON],
+    ["References", TRACE_RELATIONSHIP_TYPES.REFERENCES]
+  ]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    relationshipSelect.append(option);
+  }
+  relationshipField.append(relationshipSelect);
+
+  const targetField = document.createElement("label");
+  targetField.textContent = "Target object";
+  const targetSelect = document.createElement("select");
+  targetSelect.name = "targetObjectId";
+  for (const candidate of drafts.filter((candidate) => candidate.objectId !== draft.objectId)) {
+    const option = document.createElement("option");
+    option.value = candidate.objectId;
+    option.textContent = `${candidate.title} (${formatStatus(candidate.type)})`;
+    targetSelect.append(option);
+  }
+  targetField.append(targetSelect);
+
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "secondary-action";
+  submit.textContent = "Add Link";
+  submit.disabled = targetSelect.options.length === 0;
+
+  form.append(relationshipField, targetField, submit);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    const result = aiGenerationService.createTraceLink(
+      project.projectId,
+      draft.objectId,
+      {
+        targetObjectId: String(formData.get("targetObjectId") ?? ""),
+        relationshipType: String(formData.get("relationshipType") ?? "")
+      },
+      currentUser.actor
+    );
+
+    if (!result.ok) {
+      sharedError.textContent = result.error;
+      return;
+    }
+
+    onChange();
+  });
+
+  panel.append(form);
+  return panel;
 }
 
 function renderOwnerAssignmentField(
@@ -1221,6 +1457,10 @@ function formatOwner(ownerId, owners = []) {
   }
 
   return owners.find((owner) => owner.userId === ownerId)?.displayName ?? ownerId;
+}
+
+function formatRelationship(relationshipType) {
+  return formatStatus(relationshipType);
 }
 
 function formatDocumentValidationError(error) {

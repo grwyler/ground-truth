@@ -411,6 +411,76 @@ h4 {
   overflow-wrap: anywhere;
 }
 
+.traceability-panel {
+  border-top: 1px solid #e2e7ef;
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.trace-required-list,
+.trace-link-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.trace-required-list li,
+.trace-link-list li {
+  align-items: center;
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.trace-complete {
+  color: #23543f;
+}
+
+.trace-missing {
+  color: #9b1c31;
+}
+
+.trace-link-list span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.trace-link-form {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.trace-link-form label {
+  display: grid;
+  gap: 6px;
+  color: #3d4756;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.trace-link-form select {
+  border: 1px solid #cdd6e3;
+  border-radius: 6px;
+  color: #17202a;
+  font: inherit;
+  line-height: 1.45;
+  padding: 9px 10px;
+  width: 100%;
+}
+
+.compact-action {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+}
+
 .form-error,
 .empty-state {
   color: #9b1c31;
@@ -444,7 +514,8 @@ h4 {
   }
 
   .draft-review-workspace,
-  .draft-overlay {
+  .draft-overlay,
+  .trace-link-form {
     grid-template-columns: 1fr;
   }
 }
