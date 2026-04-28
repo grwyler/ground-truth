@@ -43,6 +43,7 @@ import {
   SEEDED_MVP_USERS,
   toAiGenerationJobSummary,
   toAcceptanceCriteriaSummary,
+  toAuditEventSummary,
   toApprovalQueueItem,
   toApprovalSummary,
   toCertificationPackageSummary,
@@ -238,7 +239,7 @@ export function createLocalAiGenerationService(
   const overrides = [...(seedData.overrides ?? [])];
   const certificationPackages = [...(seedData.certificationPackages ?? [])];
   const jiraExports = [...(seedData.jiraExports ?? [])];
-  const auditEvents = [];
+  const auditEvents = [...(seedData.auditEvents ?? [])];
   let draftIdSequence = 0;
 
   function listDecisionObjects(projectId) {
@@ -1059,8 +1060,15 @@ export function createLocalAiGenerationService(
       }
     },
 
-    listAuditEvents() {
-      return [...auditEvents];
+    listAuditEvents(projectId) {
+      if (!projectId) {
+        return [...auditEvents];
+      }
+
+      return auditEvents
+        .filter((event) => event.project_id === projectId)
+        .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
+        .map(toAuditEventSummary);
     }
   });
 }
@@ -1295,6 +1303,17 @@ function formatStatus(status) {
     .split("_")
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(" ");
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "Unknown time";
+  }
+
+  return new Date(value).toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
 }
 
 function renderDocumentInventory(project, currentUser, documentService, onChange) {
@@ -1611,8 +1630,56 @@ function renderReadinessDashboard(
     : "Jira export is available for authorized users.";
   exportSection.append(exportHeading, exportMessage, exportAction);
 
-  panel.append(header, breakdown, stats, blockerSection, overrideSection, exportSection);
+  const auditSection = renderAuditActivityPanel(
+    aiGenerationService.listAuditEvents(project.projectId)
+  );
+
+  panel.append(
+    header,
+    breakdown,
+    stats,
+    blockerSection,
+    overrideSection,
+    exportSection,
+    auditSection
+  );
   return panel;
+}
+
+function renderAuditActivityPanel(auditEvents) {
+  const section = document.createElement("section");
+  section.className = "dashboard-section audit-activity";
+  section.setAttribute("aria-label", "Audit activity");
+
+  const heading = document.createElement("h4");
+  heading.textContent = "Audit Activity";
+  section.append(heading);
+
+  if (auditEvents.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state neutral";
+    empty.textContent = "No audit events have been recorded for this project.";
+    section.append(empty);
+    return section;
+  }
+
+  const list = document.createElement("ol");
+  list.className = "audit-list";
+
+  for (const event of auditEvents.slice(0, 6)) {
+    const item = document.createElement("li");
+    const label = document.createElement("strong");
+    label.textContent = `${formatStatus(event.eventType)} ${formatStatus(event.entityType)}`;
+    const meta = document.createElement("span");
+    meta.textContent = `${formatOwner(event.actorId, SEEDED_MVP_USERS)} - ${formatDateTime(
+      event.timestamp
+    )}`;
+    item.append(label, meta);
+    list.append(item);
+  }
+
+  section.append(list);
+  return section;
 }
 
 function renderOverrideForm(project, blockers, currentUser, aiGenerationService, onChange) {
@@ -2865,7 +2932,10 @@ function formatOwner(ownerId, owners = []) {
     return "Ownership needed";
   }
 
-  return owners.find((owner) => owner.userId === ownerId)?.displayName ?? ownerId;
+  return (
+    owners.find((owner) => owner.userId === ownerId || owner.id === ownerId)?.displayName ??
+    ownerId
+  );
 }
 
 function formatRelationship(relationshipType) {

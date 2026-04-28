@@ -1,3 +1,7 @@
+import {
+  isSensitiveAuditEvent,
+  requireAuditEvent
+} from "../../../domain/src/index.js";
 import { createMvpSeedData } from "../seed/mvp-seed.js";
 
 export function createInMemoryProjectRepository(seedData = createMvpSeedData()) {
@@ -190,6 +194,7 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
     },
 
     createJiraExport(exportJob, auditEvent) {
+      assertRequiredAuditEvent(auditEvent);
       state.jiraExports.push(cloneRecord(exportJob));
 
       if (auditEvent) {
@@ -200,6 +205,7 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
     },
 
     createOverride(override, overriddenBlockers = [], auditEvent) {
+      assertRequiredAuditEvent(auditEvent);
       state.overrides.push(cloneRecord(override));
 
       for (const overriddenBlocker of overriddenBlockers) {
@@ -259,6 +265,7 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
     },
 
     createApproval(approval, decisionObject, auditEvent) {
+      assertRequiredAuditEvent(auditEvent);
       const decisionObjectIndex = state.decisionObjects.findIndex(
         (candidate) => candidate.object_id === decisionObject.object_id
       );
@@ -483,9 +490,18 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
     listAuditEvents(projectId) {
       return state.auditEvents
         .filter((event) => event.project_id === projectId)
+        .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
         .map(cloneRecord);
     }
   });
+}
+
+function assertRequiredAuditEvent(auditEvent) {
+  requireAuditEvent(auditEvent);
+
+  if (!isSensitiveAuditEvent(auditEvent)) {
+    throw new Error(`AUDIT_EVENT_NOT_SENSITIVE:${auditEvent.event_type}`);
+  }
 }
 
 function cloneRecord(record) {

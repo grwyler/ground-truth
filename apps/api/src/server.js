@@ -6,6 +6,7 @@ import {
 import { getApplicationMetadata } from "../../../packages/domain/src/index.js";
 import { createLocalStorageAdapter } from "../../../packages/storage/src/index.js";
 import { handleAuthRoute } from "./auth/routes.js";
+import { createAuditRoute } from "./routes/audit.js";
 import { createAiRoute } from "./routes/ai.js";
 import { createApprovalsRoute } from "./routes/approvals.js";
 import { createCertificationPackageRoute } from "./routes/certification-package.js";
@@ -20,19 +21,39 @@ export function createApiServer({
   metadata = getApplicationMetadata(),
   projectRepository = createInMemoryProjectRepository(),
   aiDraftAdapter,
+  now,
+  idGenerator,
   storageAdapter = createLocalStorageAdapter({
     root: createPersistenceConfig().storageRoot
   })
 } = {}) {
-  const handleAiRoute = createAiRoute({ projectRepository, aiDraftAdapter });
-  const handleApprovalsRoute = createApprovalsRoute({ projectRepository });
-  const handleCertificationPackageRoute = createCertificationPackageRoute({ projectRepository });
-  const handleDecisionObjectsRoute = createDecisionObjectsRoute({ projectRepository });
-  const handleJiraExportRoute = createJiraExportRoute({ projectRepository });
-  const handleOverridesRoute = createOverridesRoute({ projectRepository });
-  const handleProjectsRoute = createProjectsRoute({ projectRepository });
-  const handleReadinessRoute = createReadinessRoute({ projectRepository });
-  const handleDocumentsRoute = createDocumentsRoute({ projectRepository, storageAdapter });
+  const handleAiRoute = createAiRoute({ projectRepository, aiDraftAdapter, now, idGenerator });
+  const handleAuditRoute = createAuditRoute({ projectRepository });
+  const handleApprovalsRoute = createApprovalsRoute({ projectRepository, now, idGenerator });
+  const handleCertificationPackageRoute = createCertificationPackageRoute({
+    projectRepository,
+    now,
+    idGenerator
+  });
+  const handleDecisionObjectsRoute = createDecisionObjectsRoute({
+    projectRepository,
+    now,
+    idGenerator
+  });
+  const handleJiraExportRoute = createJiraExportRoute({
+    projectRepository,
+    now,
+    idGenerator
+  });
+  const handleOverridesRoute = createOverridesRoute({ projectRepository, now, idGenerator });
+  const handleProjectsRoute = createProjectsRoute({ projectRepository, now, idGenerator });
+  const handleReadinessRoute = createReadinessRoute({ projectRepository, now, idGenerator });
+  const handleDocumentsRoute = createDocumentsRoute({
+    projectRepository,
+    storageAdapter,
+    now,
+    idGenerator
+  });
 
   return createServer(async (request, response) => {
     if (handleAuthRoute(request, response)) {
@@ -44,6 +65,10 @@ export function createApiServer({
     }
 
     if (await handleDocumentsRoute(request, response)) {
+      return;
+    }
+
+    if (await handleAuditRoute(request, response)) {
       return;
     }
 

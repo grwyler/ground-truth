@@ -122,11 +122,19 @@ export function createJiraExportRoute({
         savedReadiness.blockers.filter((blocker) => blocker.status === "open"),
         { idGenerator, now }
       );
-      const auditEvent = buildJiraExportAuditEvent(blockedJob, session.actor, {
-        idGenerator,
-        now
-      });
-      projectRepository.createJiraExport(blockedJob, auditEvent);
+      try {
+        const auditEvent = buildJiraExportAuditEvent(blockedJob, session.actor, {
+          idGenerator,
+          now
+        });
+        projectRepository.createJiraExport(blockedJob, auditEvent);
+      } catch {
+        sendJson(response, 500, {
+          error: "AUDIT_WRITE_FAILED",
+          message: "Jira export was not saved because the audit event could not be recorded."
+        });
+        return true;
+      }
 
       sendJson(response, 409, {
         error: "PROJECT_NOT_READY",
@@ -167,11 +175,21 @@ export function createJiraExportRoute({
       session.actor,
       { idGenerator, now }
     );
-    const auditEvent = buildJiraExportAuditEvent(exportJob, session.actor, {
-      idGenerator,
-      now
-    });
-    const persisted = projectRepository.createJiraExport(exportJob, auditEvent);
+    let persisted;
+
+    try {
+      const auditEvent = buildJiraExportAuditEvent(exportJob, session.actor, {
+        idGenerator,
+        now
+      });
+      persisted = projectRepository.createJiraExport(exportJob, auditEvent);
+    } catch {
+      sendJson(response, 500, {
+        error: "AUDIT_WRITE_FAILED",
+        message: "Jira export was not saved because the audit event could not be recorded."
+      });
+      return true;
+    }
 
     sendJson(response, 202, {
       exportJob: toJiraExportJobSummary(persisted)

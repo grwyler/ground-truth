@@ -104,17 +104,27 @@ export function createApprovalsRoute({ projectRepository, now, idGenerator } = {
         return true;
       }
 
-      const auditEvent = buildApprovalAuditEvent(
-        result.approval,
-        result.decisionObject,
-        session.actor,
-        { idGenerator, now }
-      );
-      const persisted = projectRepository.createApproval(
-        result.approval,
-        result.decisionObject,
-        auditEvent
-      );
+      let persisted;
+
+      try {
+        const auditEvent = buildApprovalAuditEvent(
+          result.approval,
+          result.decisionObject,
+          session.actor,
+          { idGenerator, now }
+        );
+        persisted = projectRepository.createApproval(
+          result.approval,
+          result.decisionObject,
+          auditEvent
+        );
+      } catch {
+        sendJson(response, 500, {
+          error: "AUDIT_WRITE_FAILED",
+          message: "Approval was not saved because the audit event could not be recorded."
+        });
+        return true;
+      }
 
       sendJson(response, 201, {
         approval: toApprovalSummary(persisted.approval, persisted.decisionObject, version),

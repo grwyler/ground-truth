@@ -1,5 +1,15 @@
 # Done Log
 
+## 2026-04-28 - MVP-019
+
+- Added centralized audit domain helpers for validating audit records, identifying sensitive audit events, requiring complete audit metadata, and producing API/UI audit summaries.
+- Added `GET /api/v1/projects/{projectId}/audit` with project read authorization so PM and Executive Viewer roles can inspect the project audit feed while unauthorized actors are denied.
+- Added fail-closed handling for approval, override, and Jira export actions so those sensitive actions are not persisted if their audit event cannot be created or recorded.
+- Extended the in-memory repository to validate required sensitive audit events and return project audit events in chronological order.
+- Added a browser-local audit activity panel to the readiness dashboard, seeded with existing audit history and updated by approval, override, certification, and Jira export actions.
+- Added unit/API coverage for audit event validation, audit feed authorization, Executive Viewer visibility, unauthorized feed access, and fail-closed approval, override, and Jira export behavior.
+- Verified with `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+
 ## 2026-04-28 - MVP-018
 
 - Added Jira export domain helpers for Ready-to-Build gating, Jira project key validation, deterministic requirement-to-story preview mapping, traceability metadata, approval metadata, export job summaries, blocked-attempt records, and export audit events.

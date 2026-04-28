@@ -80,15 +80,26 @@ export function createOverridesRoute({ projectRepository, now, idGenerator } = {
       return true;
     }
 
-    const auditEvent = buildOverrideAuditEvent(result.override, session.actor, {
-      idGenerator,
-      now
-    });
-    const persisted = projectRepository.createOverride(
-      result.override,
-      result.overriddenBlockers,
-      auditEvent
-    );
+    let persisted;
+
+    try {
+      const auditEvent = buildOverrideAuditEvent(result.override, session.actor, {
+        idGenerator,
+        now
+      });
+      persisted = projectRepository.createOverride(
+        result.override,
+        result.overriddenBlockers,
+        auditEvent
+      );
+    } catch {
+      sendJson(response, 500, {
+        error: "AUDIT_WRITE_FAILED",
+        message: "Override was not saved because the audit event could not be recorded."
+      });
+      return true;
+    }
+
     const updatedReadiness = evaluateCurrentReadiness(
       projectRepository,
       projectId,

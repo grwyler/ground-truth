@@ -18,6 +18,7 @@ export const workspaceBoundaries = Object.freeze([
 export * from "./auth.js";
 export * from "./acceptance-criteria.js";
 export * from "./ai.js";
+export * from "./audit.js";
 export * from "./approvals.js";
 export * from "./certification.js";
 export * from "./decision-objects.js";
