@@ -1,8 +1,10 @@
 import {
   PERMISSIONS,
+  APPROVAL_STATUSES,
   DECISION_OBJECT_TYPES,
   TRACE_RELATIONSHIP_TYPES,
   authorize,
+  buildVersionDiff,
   buildApprovalAuditEvent,
   buildApprovalDecision,
   isApprovalQueueItemForActor,
@@ -140,14 +142,33 @@ function listApprovalQueue(projectRepository, projectId, actor) {
     .filter(({ decisionObject, version, approvals }) =>
       isApprovalQueueItemForActor(decisionObject, version, approvals, actor)
     )
-    .map(({ decisionObject, version, approvals }) => ({
-      ...toApprovalQueueItem(decisionObject, version, approvals),
-      traceabilityStatus: summarizeTraceabilityForApproval(
-        projectRepository,
-        projectId,
-        decisionObject
-      )
-    }));
+    .map(({ decisionObject, version, approvals }) => {
+      const latestInvalidatedApproval = approvals
+        .filter((approval) => approval.status === APPROVAL_STATUSES.INVALIDATED)
+        .at(-1);
+      const previousVersion = latestInvalidatedApproval
+        ? projectRepository
+            .listDecisionObjectVersions(decisionObject.object_id)
+            .find((candidate) => candidate.version_id === latestInvalidatedApproval.version_id)
+        : null;
+      const diff =
+        previousVersion && version
+          ? buildVersionDiff(decisionObject, previousVersion, version)
+          : null;
+
+      return {
+        ...toApprovalQueueItem(decisionObject, version, approvals),
+        traceabilityStatus: summarizeTraceabilityForApproval(
+          projectRepository,
+          projectId,
+          decisionObject
+        ),
+        invalidatedApproval: latestInvalidatedApproval
+          ? toApprovalSummary(latestInvalidatedApproval, decisionObject, previousVersion)
+          : null,
+        diff: diff?.ok ? diff.diff : null
+      };
+    });
 }
 
 function listProjectApprovalSummaries(projectRepository, projectId) {

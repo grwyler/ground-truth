@@ -1,5 +1,14 @@
 # Done Log
 
+## 2026-04-28 - MVP-013
+
+- Added versioning domain helpers for active approval invalidation, invalidation audit events, and field-level content diffs between immutable decision object versions.
+- Hooked meaningful decision object updates into approval invalidation so stale active approvals are marked Invalidated with reason and timestamp.
+- Added `GET /api/v1/projects/{projectId}/decision-objects/{objectId}/versions/diff`.
+- Added invalidated approval context and version diff details to the approval queue for re-approval.
+- Added unit/API/E2E-style coverage for invalidation scope, diff generation, diff endpoint behavior, invalidated approval persistence, and re-approval queue diff visibility.
+- Verified with `npm test`, `npm run lint`, `npm run typecheck`, and `npm run build`.
+
 ## 2026-04-28 - MVP-012
 
 - Added approval domain helpers for role/type authority, version-specific approval validation, approval queue filtering, status updates, and approval audit events.

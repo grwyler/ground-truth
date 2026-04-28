@@ -1,6 +1,7 @@
 import {
   AI_SYSTEM_ACTOR,
   APPROVAL_DECISIONS,
+  APPROVAL_STATUSES,
   DECISION_OBJECT_TYPES,
   DRAFT_REVIEW_STATUSES,
   DOCUMENT_UPLOAD_STATUSES,
@@ -8,11 +9,13 @@ import {
   TRACE_RELATIONSHIP_TYPES,
   acceptDecisionDraft,
   buildAcceptanceCriteriaCreate,
+  buildApprovalInvalidations,
   buildApprovalAuditEvent,
   buildApprovalDecision,
   buildAiGenerationAuditEvent,
   buildDecisionObjectCreate,
   buildDecisionObjectUpdate,
+  buildVersionDiff,
   buildOwnerAssignment,
   buildDocumentRecord,
   buildQueuedAiGenerationJob,
@@ -360,10 +363,29 @@ export function createLocalAiGenerationService(
       .filter(({ decisionObject, version, objectApprovals }) =>
         isApprovalQueueItemForActor(decisionObject, version, objectApprovals, actor)
       )
-      .map(({ decisionObject, version, objectApprovals }) => ({
-        ...toApprovalQueueItem(decisionObject, version, objectApprovals),
-        traceabilityStatus: summarizeTraceabilityForApproval(projectId, decisionObject)
-      }));
+      .map(({ decisionObject, version, objectApprovals }) => {
+        const latestInvalidatedApproval = objectApprovals
+          .filter((approval) => approval.status === APPROVAL_STATUSES.INVALIDATED)
+          .at(-1);
+        const previousVersion = latestInvalidatedApproval
+          ? decisionObjectVersions.find(
+              (candidate) => candidate.version_id === latestInvalidatedApproval.version_id
+            )
+          : null;
+        const diff =
+          previousVersion && version
+            ? buildVersionDiff(decisionObject, previousVersion, version)
+            : null;
+
+        return {
+          ...toApprovalQueueItem(decisionObject, version, objectApprovals),
+          traceabilityStatus: summarizeTraceabilityForApproval(projectId, decisionObject),
+          invalidatedApproval: latestInvalidatedApproval
+            ? toApprovalSummary(latestInvalidatedApproval, decisionObject, previousVersion)
+            : null,
+          diff: diff?.ok ? diff.diff : null
+        };
+      });
   }
 
   function summarizeTraceabilityForApproval(projectId, decisionObject) {
@@ -414,7 +436,10 @@ export function createLocalAiGenerationService(
           idGenerator: (kind) => {
             draftIdSequence += 1;
             return `local-${kind}-${draftIdSequence}`;
-          }
+          },
+          hasExistingApprovals: approvals.some(
+            (approval) => approval.object_id === draft.decisionObject.object_id
+          )
         }
       );
 
@@ -458,9 +483,39 @@ export function createLocalAiGenerationService(
         };
       }
 
+      const invalidation = update.meaningfulChange
+        ? buildApprovalInvalidations(
+            approvals.filter((approval) => approval.object_id === draft.decisionObject.object_id),
+            draft.decisionObject,
+            draft.version,
+            update.version,
+            actor,
+            {
+              idGenerator: (kind) => {
+                draftIdSequence += 1;
+                return `local-${kind}-${draftIdSequence}`;
+              }
+            }
+          )
+        : { invalidatedApprovals: [], auditEvents: [] };
+
+      for (const invalidatedApproval of invalidation.invalidatedApprovals) {
+        const approvalIndex = approvals.findIndex(
+          (approval) => approval.approval_id === invalidatedApproval.approval_id
+        );
+
+        if (approvalIndex !== -1) {
+          approvals[approvalIndex] = invalidatedApproval;
+        }
+      }
+      auditEvents.push(...invalidation.auditEvents);
+
       return {
         ok: true,
-        decisionObject: persistDraftUpdate(update)
+        decisionObject: persistDraftUpdate(update),
+        invalidatedApprovals: invalidation.invalidatedApprovals.map((approval) =>
+          toApprovalSummary(approval, update.decisionObject, draft.version)
+        )
       };
     },
 
@@ -1127,6 +1182,8 @@ function renderApprovalQueueItem(project, item, currentUser, decisionObjectServi
   const traceability = document.createElement("p");
   traceability.className = "approval-preview";
   traceability.textContent = item.traceabilityStatus;
+  const invalidation = renderApprovalInvalidationNotice(item);
+  const diff = renderVersionDiff(item.diff);
 
   const form = document.createElement("form");
   form.className = "approval-form";
@@ -1179,8 +1236,55 @@ function renderApprovalQueueItem(project, item, currentUser, decisionObjectServi
   }
 
   form.append(commentField, error, actions);
-  card.append(title, meta, preview, traceability, form);
+  card.append(title, meta, preview, traceability, invalidation, diff, form);
   return card;
+}
+
+function renderApprovalInvalidationNotice(item) {
+  const notice = document.createElement("p");
+  notice.className = "approval-preview invalidated-approval";
+
+  if (!item.invalidatedApproval) {
+    notice.hidden = true;
+    return notice;
+  }
+
+  notice.textContent = `Prior ${formatStatus(
+    item.invalidatedApproval.approvalDecision
+  )} decision was invalidated: ${item.invalidatedApproval.invalidationReason}`;
+  return notice;
+}
+
+function renderVersionDiff(diff) {
+  const section = document.createElement("section");
+  section.className = "version-diff";
+  section.setAttribute("aria-label", "Version diff");
+
+  if (!diff || diff.changes.length === 0) {
+    section.hidden = true;
+    return section;
+  }
+
+  const heading = document.createElement("h5");
+  heading.textContent = `Changes from v${diff.fromVersion} to v${diff.toVersion}`;
+  const list = document.createElement("ul");
+
+  for (const change of diff.changes) {
+    const item = document.createElement("li");
+    const field = document.createElement("strong");
+    field.textContent = `${formatStatus(change.field.replace("content.", ""))}: `;
+    const before = document.createElement("span");
+    before.className = "diff-before";
+    before.textContent = stringifyDiffValue(change.before);
+    const after = document.createElement("span");
+    after.className = "diff-after";
+    after.textContent = stringifyDiffValue(change.after);
+    item.append(field, before, document.createTextNode(" -> "), after);
+    list.append(item);
+  }
+
+  section.append(heading, list);
+  return section;
 }
 
 function approvalContentPreview(item) {
@@ -1197,6 +1301,22 @@ function approvalContentPreview(item) {
   }
 
   return "No structured preview available.";
+}
+
+function stringifyDiffValue(value) {
+  if (value === null || value === undefined) {
+    return "Empty";
+  }
+
+  if (Array.isArray(value)) {
+    return value.join("; ") || "Empty";
+  }
+
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
 }
 
 function renderDecisionObjectCreateForm(project, currentUser, decisionObjectService, onChange) {

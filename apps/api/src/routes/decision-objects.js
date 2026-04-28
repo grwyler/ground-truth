@@ -8,6 +8,8 @@ import {
   buildDecisionObjectAuditEvent,
   buildDecisionObjectCreate,
   buildDecisionObjectUpdate,
+  buildApprovalInvalidations,
+  buildVersionDiff,
   buildOwnerAssignment,
   buildOwnerAssignmentAuditEvent,
   buildTraceLinkAuditEvent,
@@ -343,6 +345,41 @@ export function createDecisionObjectsRoute({ projectRepository, now, idGenerator
         return true;
       }
 
+      if (
+        request.method === "GET" &&
+        pathParts.length === 8 &&
+        pathParts[6] === "versions" &&
+        pathParts[7] === "diff"
+      ) {
+        const authorization = authorize(session.actor, PERMISSIONS.READ_PROJECT);
+
+        if (!authorization.allowed) {
+          sendJson(response, 403, { error: "FORBIDDEN" });
+          return true;
+        }
+
+        const fromVersion = projectRepository.findDecisionObjectVersion(
+          decisionObject.object_id,
+          Number(requestUrl.searchParams.get("fromVersion"))
+        );
+        const toVersion = projectRepository.findDecisionObjectVersion(
+          decisionObject.object_id,
+          Number(requestUrl.searchParams.get("toVersion"))
+        );
+        const diff = buildVersionDiff(decisionObject, fromVersion, toVersion);
+
+        if (!diff.ok) {
+          sendJson(response, 404, {
+            error: "VERSION_NOT_FOUND",
+            details: diff.validation.errors
+          });
+          return true;
+        }
+
+        sendJson(response, 200, diff.diff);
+        return true;
+      }
+
       if (request.method === "PATCH" && pathParts.length === 7 && pathParts[6] === "owner") {
         const authorization = authorize(session.actor, PERMISSIONS.MANAGE_PROJECT);
 
@@ -446,14 +483,31 @@ export function createDecisionObjectsRoute({ projectRepository, now, idGenerator
           },
           { idGenerator, now }
         );
+        const invalidation = update.meaningfulChange
+          ? buildApprovalInvalidations(
+              approvals,
+              decisionObject,
+              version,
+              update.version,
+              session.actor,
+              { idGenerator, now }
+            )
+          : { invalidatedApprovals: [], auditEvents: [] };
         const updated = projectRepository.updateDecisionObject(
           update.decisionObject,
           update.version,
-          auditEvent
+          auditEvent,
+          invalidation.invalidatedApprovals,
+          invalidation.auditEvents
         );
 
         sendJson(response, 200, {
-          decisionObject: toDecisionObjectSummary(updated.decisionObject, updated.version)
+          decisionObject: toDecisionObjectSummary(updated.decisionObject, updated.version),
+          invalidatedApprovals: updated.invalidatedApprovals.map((approval) => ({
+            approvalId: approval.approval_id,
+            reason: approval.invalidation_reason,
+            invalidatedAt: approval.invalidated_at
+          }))
         });
         return true;
       }

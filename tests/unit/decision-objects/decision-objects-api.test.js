@@ -246,6 +246,77 @@ test("decision object API requires change reason once approvals exist", async ()
   }
 });
 
+test("decision object API invalidates approvals and returns version diff", async () => {
+  const repository = createInMemoryProjectRepository({
+    projects: [project],
+    documents: [],
+    aiGenerationJobs: [],
+    decisionObjects: [
+      {
+        ...decisionObject,
+        status: DECISION_OBJECT_STATUSES.APPROVED
+      }
+    ],
+    decisionObjectVersions: [version],
+    approvals: [
+      {
+        approval_id: "approval-draft-api",
+        object_id: decisionObject.object_id,
+        version_id: version.version_id,
+        approver_id: "user-customer-pm-001",
+        decision: "approved",
+        comment: "Approved for baseline.",
+        status: "active",
+        created_at: "2026-04-28T12:00:00.000Z",
+        invalidated_at: null,
+        invalidation_reason: null
+      }
+    ],
+    auditEvents: []
+  });
+  const server = await listen(createApiServer({ projectRepository: repository }));
+  const baseUrl = getBaseUrl(server);
+
+  try {
+    const updateResponse = await fetch(
+      `${baseUrl}/api/v1/projects/project-draft-api/decision-objects/obj-draft-api`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          content: {
+            requirement: "Reviewed API requirement text with timestamp evidence."
+          },
+          changeReason: "Clarified evidence requirements."
+        })
+      }
+    );
+    const updated = await updateResponse.json();
+    const approvals = repository.listDecisionObjectApprovals(decisionObject.object_id);
+
+    assert.equal(updateResponse.status, 200);
+    assert.equal(updated.decisionObject.currentVersion, 2);
+    assert.equal(updated.invalidatedApprovals.length, 1);
+    assert.equal(approvals[0].status, "invalidated");
+    assert.equal(repository.listAuditEvents("project-draft-api").length, 2);
+
+    const diffResponse = await fetch(
+      `${baseUrl}/api/v1/projects/project-draft-api/decision-objects/obj-draft-api/versions/diff?fromVersion=1&toVersion=2`
+    );
+    const diff = await diffResponse.json();
+
+    assert.equal(diffResponse.status, 200);
+    assert.equal(diff.fromVersion, 1);
+    assert.equal(diff.toVersion, 2);
+    assert.deepEqual(
+      diff.changes.map((change) => change.field),
+      ["content.requirement"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
 test("decision object API assigns owners and audits ownership changes", async () => {
   const repository = createRepository();
   const server = await listen(createApiServer({ projectRepository: repository }));

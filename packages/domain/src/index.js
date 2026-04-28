@@ -26,3 +26,4 @@ export * from "./ownership.js";
 export * from "./projects.js";
 export * from "./roles.js";
 export * from "./traceability.js";
+export * from "./versioning.js";

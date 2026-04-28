@@ -628,6 +628,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-013
 
+**Status:** Complete.
+
 **Title:** Implement approval invalidation and basic version diff
 
 **Goal:** Invalidate impacted approvals when meaningful content changes and provide a basic visual diff between versions.

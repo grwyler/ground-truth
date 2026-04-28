@@ -62,6 +62,67 @@ test("approval queue only returns items relevant to the current approver role", 
   }
 });
 
+test("approval queue includes invalidation reason and diff for re-approval", async () => {
+  const revisedRequirement = {
+    ...requirement,
+    current_version: 2,
+    status: DECISION_OBJECT_STATUSES.DRAFT
+  };
+  const firstVersion = versionFor(revisedRequirement);
+  const secondVersion = {
+    ...firstVersion,
+    version_id: "ver-obj-requirement-approval-2",
+    version_number: 2,
+    content: { summary: "Ready for approval: revised requirement text." }
+  };
+  const repository = createInMemoryProjectRepository({
+    projects: [project],
+    documents: [],
+    aiGenerationJobs: [],
+    decisionObjects: [workflow, revisedRequirement],
+    decisionObjectVersions: [versionFor(workflow), firstVersion, secondVersion],
+    approvals: [
+      {
+        approval_id: "approval-invalidated-requirement",
+        object_id: revisedRequirement.object_id,
+        version_id: firstVersion.version_id,
+        approver_id: "user-customer-pm-001",
+        decision: "approved",
+        comment: "Approved previous text.",
+        status: "invalidated",
+        created_at: "2026-04-28T12:00:00.000Z",
+        invalidated_at: "2026-04-28T13:00:00.000Z",
+        invalidation_reason:
+          "Version 1 was superseded by version 2 after a meaningful content change."
+      }
+    ],
+    auditEvents: []
+  });
+  const server = await listen(createApiServer({ projectRepository: repository }));
+  const baseUrl = getBaseUrl(server);
+
+  try {
+    const response = await fetch(
+      `${baseUrl}/api/v1/projects/project-approval-api/approvals`,
+      {
+        headers: { "x-user-id": "user-customer-pm-001" }
+      }
+    );
+    const queue = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(queue.queue.length, 1);
+    assert.equal(queue.queue[0].invalidatedApproval.approvalId, "approval-invalidated-requirement");
+    assert.equal(queue.queue[0].diff.fromVersion, 1);
+    assert.deepEqual(
+      queue.queue[0].diff.changes.map((change) => change.field),
+      ["content.summary"]
+    );
+  } finally {
+    server.close();
+  }
+});
+
 test("assigned approver can approve, reject, and request changes for the current version", async () => {
   const repository = createRepository();
   const server = await listen(createApiServer({ projectRepository: repository }));

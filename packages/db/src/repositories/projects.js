@@ -257,7 +257,7 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
       };
     },
 
-    updateDecisionObject(decisionObject, version, auditEvent) {
+    updateDecisionObject(decisionObject, version, auditEvent, invalidatedApprovals = [], auditEvents = []) {
       const decisionObjectIndex = state.decisionObjects.findIndex(
         (candidate) => candidate.object_id === decisionObject.object_id
       );
@@ -280,9 +280,22 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
         state.auditEvents.push(cloneRecord(auditEvent));
       }
 
+      for (const invalidatedApproval of invalidatedApprovals) {
+        const approvalIndex = state.approvals.findIndex(
+          (candidate) => candidate.approval_id === invalidatedApproval.approval_id
+        );
+
+        if (approvalIndex !== -1) {
+          state.approvals[approvalIndex] = cloneRecord(invalidatedApproval);
+        }
+      }
+
+      state.auditEvents.push(...auditEvents.map(cloneRecord));
+
       return {
         decisionObject: cloneRecord(decisionObject),
-        version: cloneRecord(version)
+        version: cloneRecord(version),
+        invalidatedApprovals: invalidatedApprovals.map(cloneRecord)
       };
     },
 
