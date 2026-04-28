@@ -4,10 +4,12 @@ import {
   acceptDecisionDraft,
   authorize,
   buildDecisionObjectAuditEvent,
+  buildDecisionObjectCreate,
   buildDecisionObjectUpdate,
   isRejectedDecisionDraft,
   rejectDecisionDraft,
-  toDecisionObjectSummary
+  toDecisionObjectSummary,
+  toDecisionObjectVersionSummary
 } from "../../../../packages/domain/src/index.js";
 import { resolveLocalSession } from "../auth/session.js";
 import { readJsonBody, sendJson } from "./projects.js";
@@ -60,6 +62,54 @@ export function createDecisionObjectsRoute({ projectRepository, now, idGenerator
       return true;
     }
 
+    if (request.method === "POST" && pathParts.length === 5) {
+      const authorization = authorize(session.actor, PERMISSIONS.EDIT_PROJECT);
+
+      if (!authorization.allowed) {
+        sendJson(response, 403, { error: "FORBIDDEN" });
+        return true;
+      }
+
+      const body = await readJsonBody(request);
+      const created = buildDecisionObjectCreate(
+        {
+          ...body,
+          projectId
+        },
+        session.actor,
+        { idGenerator, now }
+      );
+
+      if (!created.ok) {
+        sendJson(response, 400, {
+          error: "VALIDATION_ERROR",
+          details: created.validation.errors
+        });
+        return true;
+      }
+
+      const auditEvent = buildDecisionObjectAuditEvent(
+        created.decisionObject,
+        session.actor,
+        "created",
+        { version_id: created.version.version_id },
+        { idGenerator, now }
+      );
+      const persisted = projectRepository.createDecisionObject(
+        created.decisionObject,
+        created.version,
+        auditEvent
+      );
+
+      sendJson(response, 201, {
+        decisionObject: toDecisionObjectSummary(
+          persisted.decisionObject,
+          persisted.version
+        )
+      });
+      return true;
+    }
+
     if (pathParts.length >= 6) {
       const objectId = pathParts[5];
       const decisionObject = projectRepository.findDecisionObject(projectId, objectId);
@@ -74,6 +124,36 @@ export function createDecisionObjectsRoute({ projectRepository, now, idGenerator
         decisionObject.current_version
       );
 
+      if (request.method === "GET" && pathParts.length === 6) {
+        const authorization = authorize(session.actor, PERMISSIONS.READ_PROJECT);
+
+        if (!authorization.allowed) {
+          sendJson(response, 403, { error: "FORBIDDEN" });
+          return true;
+        }
+
+        sendJson(response, 200, {
+          decisionObject: toDecisionObjectSummary(decisionObject, version)
+        });
+        return true;
+      }
+
+      if (request.method === "GET" && pathParts.length === 7 && pathParts[6] === "versions") {
+        const authorization = authorize(session.actor, PERMISSIONS.READ_PROJECT);
+
+        if (!authorization.allowed) {
+          sendJson(response, 403, { error: "FORBIDDEN" });
+          return true;
+        }
+
+        sendJson(response, 200, {
+          versions: projectRepository
+            .listDecisionObjectVersions(decisionObject.object_id)
+            .map(toDecisionObjectVersionSummary)
+        });
+        return true;
+      }
+
       if (request.method === "PATCH" && pathParts.length === 6) {
         const authorization = authorize(session.actor, PERMISSIONS.EDIT_PROJECT);
 
@@ -83,8 +163,13 @@ export function createDecisionObjectsRoute({ projectRepository, now, idGenerator
         }
 
         const body = await readJsonBody(request);
+        const approvals = projectRepository.listDecisionObjectApprovals?.(
+          decisionObject.object_id
+        ) ?? [];
         const update = buildDecisionObjectUpdate(decisionObject, version, body, session.actor, {
-          now
+          idGenerator,
+          now,
+          hasExistingApprovals: approvals.length > 0
         });
 
         if (!update.ok) {
@@ -99,10 +184,13 @@ export function createDecisionObjectsRoute({ projectRepository, now, idGenerator
           update.decisionObject,
           session.actor,
           "edited",
-          { version_id: update.version.version_id },
+          {
+            version_id: update.version.version_id,
+            meaningful_change: update.meaningfulChange
+          },
           { idGenerator, now }
         );
-        const updated = projectRepository.updateDecisionObjectDraft(
+        const updated = projectRepository.updateDecisionObject(
           update.decisionObject,
           update.version,
           auditEvent

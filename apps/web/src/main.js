@@ -5,6 +5,7 @@ import {
   DOCUMENT_VALIDATION_ERRORS,
   acceptDecisionDraft,
   buildAiGenerationAuditEvent,
+  buildDecisionObjectCreate,
   buildDecisionObjectUpdate,
   buildDocumentRecord,
   buildQueuedAiGenerationJob,
@@ -242,13 +243,46 @@ export function createLocalAiGenerationService(
     );
 
     decisionObjects[objectIndex] = update.decisionObject;
-    decisionObjectVersions[versionIndex] = update.version;
+
+    if (versionIndex === -1) {
+      decisionObjectVersions.push(update.version);
+    } else {
+      decisionObjectVersions[versionIndex] = update.version;
+    }
 
     return toDecisionObjectSummary(update.decisionObject, update.version);
   }
 
   return Object.freeze({
     listDecisionObjects,
+
+    createDecisionObject(projectId, input, actor) {
+      const created = buildDecisionObjectCreate(
+        {
+          ...input,
+          projectId
+        },
+        actor,
+        {
+          idGenerator: (kind) => {
+            draftIdSequence += 1;
+            return `local-${kind}-${draftIdSequence}`;
+          }
+        }
+      );
+
+      if (!created.ok) {
+        return { ok: false, error: "Type, title, and structured content are required." };
+      }
+
+      decisionObjects.push(created.decisionObject);
+      decisionObjectVersions.push(created.version);
+
+      return {
+        ok: true,
+        decisionObject: toDecisionObjectSummary(created.decisionObject, created.version)
+      };
+    },
 
     updateDraft(projectId, objectId, input, actor) {
       const draft = findDraft(projectId, objectId);
@@ -261,7 +295,13 @@ export function createLocalAiGenerationService(
         draft.decisionObject,
         draft.version,
         input,
-        actor
+        actor,
+        {
+          idGenerator: (kind) => {
+            draftIdSequence += 1;
+            return `local-${kind}-${draftIdSequence}`;
+          }
+        }
       );
 
       if (!update.ok) {
@@ -683,8 +723,9 @@ function renderAiGenerationPanel(
 
   header.append(heading, generateButton);
   panel.append(header, status);
+  panel.append(renderDecisionObjectCreateForm(project, currentUser, aiGenerationService, onChange));
 
-  if (documents.length === 0) {
+  if (documents.length === 0 && drafts.length === 0) {
     const empty = document.createElement("p");
     empty.className = "empty-state";
     empty.textContent = "AI draft generation is available after documents are uploaded.";
@@ -710,6 +751,79 @@ function renderAiGenerationPanel(
     )
   );
   return panel;
+}
+
+function renderDecisionObjectCreateForm(project, currentUser, decisionObjectService, onChange) {
+  const form = document.createElement("form");
+  form.className = "draft-edit-form object-create-form";
+  form.setAttribute("aria-label", "Create decision object");
+
+  if (!currentUser.canEditProject) {
+    return form;
+  }
+
+  const heading = document.createElement("h4");
+  heading.textContent = "Create Decision Object";
+
+  const typeField = document.createElement("label");
+  typeField.textContent = "Type";
+  const typeSelect = document.createElement("select");
+  typeSelect.name = "type";
+  for (const [label, value] of [
+    ["Workflow", "workflow"],
+    ["Requirement", "requirement"],
+    ["Test", "test"],
+    ["Risk", "risk"]
+  ]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    typeSelect.append(option);
+  }
+  typeField.append(typeSelect);
+
+  const titleField = createInput("Title", "title", true);
+  const contentField = document.createElement("label");
+  contentField.textContent = "Content";
+  const contentArea = document.createElement("textarea");
+  contentArea.name = "content";
+  contentArea.rows = 4;
+  contentArea.required = true;
+  contentField.append(contentArea);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.textContent = "Create Object";
+
+  form.append(heading, typeField, titleField, contentField, error, submit);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    const type = String(formData.get("type") ?? "requirement");
+    const result = decisionObjectService.createDecisionObject(
+      project.projectId,
+      {
+        type,
+        title: String(formData.get("title") ?? ""),
+        content: editableTextToDraftContent({ type }, String(formData.get("content") ?? ""))
+      },
+      currentUser.actor
+    );
+
+    if (!result.ok) {
+      error.textContent = result.error;
+      return;
+    }
+
+    form.reset();
+    onChange();
+  });
+
+  return form;
 }
 
 function renderDraftReviewWorkspace(
@@ -823,6 +937,8 @@ function renderDraftReviewWorkspace(
     contentArea.value = draftContentToEditableText(draft);
     contentField.append(contentArea);
 
+    const reasonField = createInput("Change reason", "changeReason");
+
     const error = document.createElement("p");
     error.className = "form-error";
     error.setAttribute("role", "alert");
@@ -845,7 +961,7 @@ function renderDraftReviewWorkspace(
     reject.disabled = !currentUser.canEditProject;
     actions.append(save, accept, reject);
 
-    form.append(titleField, contentField, error, actions);
+    form.append(titleField, contentField, reasonField, error, actions);
 
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -854,7 +970,8 @@ function renderDraftReviewWorkspace(
         draft.objectId,
         {
           title: String(new FormData(form).get("title") ?? ""),
-          content: editableTextToDraftContent(draft, contentArea.value)
+          content: editableTextToDraftContent(draft, contentArea.value),
+          changeReason: String(new FormData(form).get("changeReason") ?? "")
         },
         currentUser.actor
       );

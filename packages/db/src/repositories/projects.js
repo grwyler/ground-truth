@@ -7,6 +7,7 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
     aiGenerationJobs: (seedData.aiGenerationJobs ?? []).map(cloneRecord),
     decisionObjects: (seedData.decisionObjects ?? []).map(cloneRecord),
     decisionObjectVersions: (seedData.decisionObjectVersions ?? []).map(cloneRecord),
+    approvals: (seedData.approvals ?? []).map(cloneRecord),
     auditEvents: seedData.auditEvents.map(cloneRecord)
   };
 
@@ -103,6 +104,62 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
       );
 
       return version ? cloneRecord(version) : null;
+    },
+
+    listDecisionObjectVersions(objectId) {
+      return state.decisionObjectVersions
+        .filter((version) => version.object_id === objectId)
+        .sort((left, right) => left.version_number - right.version_number)
+        .map(cloneRecord);
+    },
+
+    listDecisionObjectApprovals(objectId) {
+      return state.approvals
+        .filter((approval) => approval.object_id === objectId)
+        .map(cloneRecord);
+    },
+
+    createDecisionObject(decisionObject, version, auditEvent) {
+      state.decisionObjects.push(cloneRecord(decisionObject));
+      state.decisionObjectVersions.push(cloneRecord(version));
+
+      if (auditEvent) {
+        state.auditEvents.push(cloneRecord(auditEvent));
+      }
+
+      return {
+        decisionObject: cloneRecord(decisionObject),
+        version: cloneRecord(version)
+      };
+    },
+
+    updateDecisionObject(decisionObject, version, auditEvent) {
+      const decisionObjectIndex = state.decisionObjects.findIndex(
+        (candidate) => candidate.object_id === decisionObject.object_id
+      );
+
+      if (decisionObjectIndex === -1) {
+        throw new Error(`Unknown decision object: ${decisionObject.object_id}`);
+      }
+
+      state.decisionObjects[decisionObjectIndex] = cloneRecord(decisionObject);
+
+      const versionExists = state.decisionObjectVersions.some(
+        (candidate) => candidate.version_id === version.version_id
+      );
+
+      if (!versionExists) {
+        state.decisionObjectVersions.push(cloneRecord(version));
+      }
+
+      if (auditEvent) {
+        state.auditEvents.push(cloneRecord(auditEvent));
+      }
+
+      return {
+        decisionObject: cloneRecord(decisionObject),
+        version: cloneRecord(version)
+      };
     },
 
     updateDecisionObjectDraft(decisionObject, version, auditEvent) {

@@ -58,8 +58,10 @@ test("draft review update edits title and current draft content", () => {
 
   assert.equal(result.ok, true);
   assert.equal(result.decisionObject.title, "Reviewed generated requirement");
+  assert.equal(result.decisionObject.current_version, 2);
   assert.equal(result.decisionObject.updated_at, "2026-04-28T13:00:00.000Z");
   assert.equal(result.version.content.requirement, "Reviewed requirement text.");
+  assert.equal(result.version.version_number, 2);
   assert.equal(result.version.content.ai_generated, true);
   assert.equal(result.version.content.ai_review_status, DRAFT_REVIEW_STATUSES.SUGGESTED);
   assert.equal(result.version.changed_by, pm.id);

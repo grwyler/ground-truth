@@ -82,7 +82,18 @@ test("decision object API lists, edits, and accepts draft objects", async () => 
 
     assert.equal(editResponse.status, 200);
     assert.equal(edit.decisionObject.title, "Reviewed API requirement");
+    assert.equal(edit.decisionObject.currentVersion, 2);
     assert.equal(edit.decisionObject.content.requirement, "Reviewed API requirement text.");
+
+    const versionsResponse = await fetch(
+      `${baseUrl}/api/v1/projects/project-draft-api/decision-objects/obj-draft-api/versions`
+    );
+    const versions = await versionsResponse.json();
+
+    assert.equal(versionsResponse.status, 200);
+    assert.equal(versions.versions.length, 2);
+    assert.equal(versions.versions[0].content.requirement, "Generated API requirement text.");
+    assert.equal(versions.versions[1].versionNumber, 2);
 
     const acceptResponse = await fetch(
       `${baseUrl}/api/v1/projects/project-draft-api/decision-objects/obj-draft-api/accept`,
@@ -125,6 +136,111 @@ test("decision object API rejects drafts and reports readiness exclusion", async
       result.decisionObject.content.ai_review_status,
       DRAFT_REVIEW_STATUSES.REJECTED
     );
+  } finally {
+    server.close();
+  }
+});
+
+test("decision object API creates objects and skips versions for metadata-only edits", async () => {
+  const repository = createRepository();
+  const server = await listen(createApiServer({ projectRepository: repository }));
+  const baseUrl = getBaseUrl(server);
+
+  try {
+    const createResponse = await fetch(
+      `${baseUrl}/api/v1/projects/project-draft-api/decision-objects`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "risk",
+          title: "Coverage risk",
+          content: {
+            risk: "Remote sites may have unstable coverage."
+          },
+          ownerId: "user-pm-001",
+          priority: "high"
+        })
+      }
+    );
+    const created = await createResponse.json();
+
+    assert.equal(createResponse.status, 201);
+    assert.equal(created.decisionObject.currentVersion, 1);
+    assert.equal(created.decisionObject.type, "risk");
+
+    const updateResponse = await fetch(
+      `${baseUrl}/api/v1/projects/project-draft-api/decision-objects/${created.decisionObject.objectId}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ownerId: "user-eng-001",
+          priority: "medium"
+        })
+      }
+    );
+    const updated = await updateResponse.json();
+
+    assert.equal(updateResponse.status, 200);
+    assert.equal(updated.decisionObject.currentVersion, 1);
+    assert.equal(updated.decisionObject.ownerId, "user-eng-001");
+
+    const versionsResponse = await fetch(
+      `${baseUrl}/api/v1/projects/project-draft-api/decision-objects/${created.decisionObject.objectId}/versions`
+    );
+    const versions = await versionsResponse.json();
+
+    assert.equal(versions.versions.length, 1);
+  } finally {
+    server.close();
+  }
+});
+
+test("decision object API requires change reason once approvals exist", async () => {
+  const repository = createInMemoryProjectRepository({
+    projects: [project],
+    documents: [],
+    aiGenerationJobs: [],
+    decisionObjects: [decisionObject],
+    decisionObjectVersions: [version],
+    approvals: [
+      {
+        approval_id: "approval-draft-api",
+        object_id: decisionObject.object_id,
+        version_id: version.version_id,
+        approver_id: "user-customer-pm-001",
+        decision: "approved",
+        comment: null,
+        status: "active",
+        created_at: "2026-04-28T12:00:00.000Z",
+        invalidated_at: null,
+        invalidation_reason: null
+      }
+    ],
+    auditEvents: []
+  });
+  const server = await listen(createApiServer({ projectRepository: repository }));
+  const baseUrl = getBaseUrl(server);
+
+  try {
+    const response = await fetch(
+      `${baseUrl}/api/v1/projects/project-draft-api/decision-objects/obj-draft-api`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          content: {
+            requirement: "Changed without reason."
+          }
+        })
+      }
+    );
+    const result = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.equal(result.error, "VALIDATION_ERROR");
+    assert.deepEqual(result.details, ["DECISION_OBJECT_CHANGE_REASON_REQUIRED"]);
   } finally {
     server.close();
   }

@@ -367,6 +367,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-008
 
+**Status:** Complete.
+
 **Title:** Implement decision object editing and version creation
 
 **Goal:** Support durable editing of Workflow, Requirement, Test, and Risk objects with immutable version history.

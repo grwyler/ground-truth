@@ -1,5 +1,15 @@
 # Done Log
 
+## 2026-04-28 - MVP-008
+
+- Added decision object creation and versioned update domain helpers, including meaningful-change detection and change-reason enforcement when prior approvals exist.
+- Added immutable version creation for content edits while keeping owner/status/priority-only edits from creating unnecessary versions.
+- Added decision object API support for creating objects, reading a single object, updating objects, and listing version history.
+- Extended the in-memory repository with approval-aware versioning persistence and retrievable version history.
+- Added a small browser-local decision object create flow plus change-reason capture and version badge continuity in the existing workspace editor.
+- Added unit/API coverage for object creation, content-change version increments, metadata-only updates, prior-version preservation, approval-backed change reason validation, and version history retrieval.
+- Verified with `npm test`, `npm run lint`, `npm run typecheck`, and `npm run build`.
+
 ## 2026-04-28 - MVP-007
 
 - Added draft review domain helpers for editing generated draft content, accepting drafts into the active Draft set, rejecting drafts, and marking rejected drafts as excluded from readiness.
