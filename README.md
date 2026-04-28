@@ -29,6 +29,12 @@ npm test
 npm run build
 ```
 
+Reset and write deterministic MVP seed data:
+
+```bash
+npm run db:seed
+```
+
 Run the placeholder API:
 
 ```bash
@@ -55,7 +61,7 @@ Copy `.env.example` to `.env.local` for local development. The example documents
 - Web UI: static browser modules in `apps/web` until a framework is justified by feature work.
 - API: Node's built-in `http` module behind route functions in `apps/api`.
 - Domain: plain JavaScript modules with JSDoc-friendly exports in `packages/domain`.
-- Persistence: adapter boundary in `packages/db`; schema and migrations arrive in MVP-003.
+- Persistence: adapter boundary in `packages/db` with the MVP-003 schema migration and deterministic seed data.
 - Tests: Node's built-in `node:test`.
 
 Future tickets can swap in richer framework pieces while preserving these repo boundaries.

@@ -108,6 +108,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-003
 
+**Status:** Complete.
+
 **Title:** Create MVP database schema and seed data
 
 **Goal:** Implement the decision-object-centric persistence model needed for the MVP readiness flow.

@@ -16,4 +16,5 @@ export const workspaceBoundaries = Object.freeze([
 ]);
 
 export * from "./auth.js";
+export * from "./models/index.js";
 export * from "./roles.js";

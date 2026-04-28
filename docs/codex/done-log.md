@@ -1,5 +1,14 @@
 # Done Log
 
+## 2026-04-28 - MVP-003
+
+- Added the MVP baseline PostgreSQL migration for projects, documents, AI generation jobs, decision objects and versions, trace links, approvals, readiness evaluations, blockers, overrides, certification packages, Jira exports, users, role assignments, and audit events.
+- Added schema metadata helpers for table discovery and required-field validation.
+- Added deterministic MVP seed data for a realistic Not Ready project with documents, draft/generated decision objects, versions, traceability, approvals, blockers, an override, package/export records, users, roles, and audit events.
+- Added `npm run db:seed` to reset and write local seed data under `.data/seed`.
+- Added unit tests proving required schema collections, mandatory fields, seed relationships, immutable version approval references, and override-to-blocker references.
+- Verified with `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, and `npm run db:seed`.
+
 ## 2026-04-28 - MVP-002
 
 - Added seeded local/dev users for Program Manager, Engineering Lead, Operator Representative, Customer PM, and Executive Viewer.
