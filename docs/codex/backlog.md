@@ -901,6 +901,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-018
 
+**Status:** Complete.
+
 **Title:** Implement Jira export gating and preview
 
 **Goal:** Enforce that Jira export is blocked until Ready-to-Build or valid override state, then generate epics/stories with traceability metadata.

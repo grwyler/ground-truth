@@ -14,6 +14,7 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
     blockers: (seedData.blockers ?? []).map(cloneRecord),
     overrides: (seedData.overrides ?? []).map(cloneRecord),
     certificationPackages: (seedData.certificationPackages ?? []).map(cloneRecord),
+    jiraExports: (seedData.jiraExports ?? []).map(cloneRecord),
     users: (seedData.users ?? defaultSeedData.users).map(cloneRecord),
     roleAssignments: (seedData.roleAssignments ?? defaultSeedData.roleAssignments).map(cloneRecord),
     auditEvents: (seedData.auditEvents ?? []).map(cloneRecord)
@@ -171,6 +172,31 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
       }
 
       return cloneRecord(packageRecord);
+    },
+
+    listJiraExports(projectId) {
+      return state.jiraExports
+        .filter((exportJob) => exportJob.project_id === projectId)
+        .map(cloneRecord);
+    },
+
+    findJiraExport(projectId, exportJobId) {
+      const exportJob = state.jiraExports.find(
+        (candidate) =>
+          candidate.project_id === projectId && candidate.export_job_id === exportJobId
+      );
+
+      return exportJob ? cloneRecord(exportJob) : null;
+    },
+
+    createJiraExport(exportJob, auditEvent) {
+      state.jiraExports.push(cloneRecord(exportJob));
+
+      if (auditEvent) {
+        state.auditEvents.push(cloneRecord(auditEvent));
+      }
+
+      return cloneRecord(exportJob);
     },
 
     createOverride(override, overriddenBlockers = [], auditEvent) {

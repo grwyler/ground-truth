@@ -19,6 +19,9 @@ import {
   buildCertificationPackageAuditEvent,
   buildDecisionObjectCreate,
   buildDecisionObjectUpdate,
+  buildJiraExportAuditEvent,
+  buildJiraExportJob,
+  buildJiraExportPreview,
   buildVersionDiff,
   buildOwnerAssignment,
   buildDocumentRecord,
@@ -45,6 +48,7 @@ import {
   toCertificationPackageSummary,
   toDecisionObjectSummary,
   toDocumentSummary,
+  toJiraExportJobSummary,
   toOverrideSummary,
   toProjectSummary,
   toReadinessResponse,
@@ -52,6 +56,7 @@ import {
 } from "../../../packages/domain/src/index.js";
 import { createMvpSeedData } from "../../../packages/db/src/index.js";
 import { createDeterministicDraftAdapter } from "../../../packages/ai/src/index.js";
+import { createMockJiraAdapter } from "../../../packages/integrations/jira/src/index.js";
 import { createLocalCurrentUser } from "./lib/session/current-user.js";
 
 export function renderAppShell(
@@ -232,6 +237,7 @@ export function createLocalAiGenerationService(
   const approvals = [...(seedData.approvals ?? [])];
   const overrides = [...(seedData.overrides ?? [])];
   const certificationPackages = [...(seedData.certificationPackages ?? [])];
+  const jiraExports = [...(seedData.jiraExports ?? [])];
   const auditEvents = [];
   let draftIdSequence = 0;
 
@@ -525,6 +531,77 @@ export function createLocalAiGenerationService(
       return certificationPackages
         .filter((packageRecord) => packageRecord.project_id === projectId)
         .map((packageRecord) => toCertificationPackageSummary(packageRecord));
+    },
+
+    listJiraExports(projectId) {
+      return jiraExports
+        .filter((exportJob) => exportJob.project_id === projectId)
+        .map((exportJob) => toJiraExportJobSummary(exportJob));
+    },
+
+    exportToJira(projectId, input, actor, jiraAdapter = createMockJiraAdapter()) {
+      const project = projectService
+        .listProjects()
+        .find((candidate) => candidate.projectId === projectId);
+
+      if (!project) {
+        return { ok: false, error: "Project was not found." };
+      }
+
+      const exportInputs = getCertificationInputs(projectId);
+      const readinessResult = evaluateProjectReadiness(toProjectRecord(project), exportInputs);
+      const previewResult = buildJiraExportPreview(
+        toProjectRecord(project),
+        readinessResult,
+        exportInputs,
+        input,
+        actor
+      );
+
+      if (!previewResult.ok) {
+        return {
+          ok: false,
+          error: previewResult.validation.errors.includes("PROJECT_NOT_READY")
+            ? "Jira export is blocked until Ready-to-Build or accepted risk opens the gate."
+            : "Enter a valid Jira project key and use an authorized export role."
+        };
+      }
+
+      const adapterResult = jiraAdapter.exportPreview(previewResult.preview, input);
+      const exportJob = buildJiraExportJob(
+        toProjectRecord(project),
+        previewResult.preview,
+        adapterResult,
+        input,
+        actor,
+        {
+          idGenerator: (kind) => {
+            draftIdSequence += 1;
+            return `local-${kind}-${draftIdSequence}`;
+          }
+        }
+      );
+
+      jiraExports.push(exportJob);
+      auditEvents.push(
+        buildJiraExportAuditEvent(exportJob, actor, {
+          idGenerator: (kind) => {
+            draftIdSequence += 1;
+            return `local-${kind}-${draftIdSequence}`;
+          }
+        })
+      );
+
+      const summary = toJiraExportJobSummary(exportJob);
+
+      return {
+        ok: summary.status === "completed" || summary.status === "partial",
+        exportJob: summary,
+        error:
+          summary.status === "failed"
+            ? summary.errors[0]?.message ?? "Jira export failed."
+            : null
+      };
     },
 
     generateCertificationPackage(projectId, input, actor) {
@@ -1180,12 +1257,23 @@ function renderProjectWorkspace(
       );
     }
   );
+  const jiraExportPanel = renderJiraExportPanel(project, currentUser, aiGenerationService, () => {
+    renderProjectWorkspace(
+      container,
+      project,
+      currentUser,
+      documentService,
+      aiGenerationService,
+      selectedObjectId
+    );
+  });
 
   container.append(
     heading,
     meta,
     readinessDashboard,
     certificationPanel,
+    jiraExportPanel,
     documentPanel,
     aiPanel,
     approvalPanel
@@ -1704,6 +1792,121 @@ function renderCertificationPackagePanel(project, currentUser, aiGenerationServi
   });
 
   panel.append(header, status, checklist, preview, error);
+  return panel;
+}
+
+function renderJiraExportPanel(project, currentUser, aiGenerationService, onChange) {
+  const panel = document.createElement("section");
+  panel.className = "jira-export-panel";
+  panel.setAttribute("aria-label", "Jira export");
+
+  const dashboard = aiGenerationService.getReadinessDashboard(project.projectId);
+  const exportJobs = aiGenerationService.listJiraExports(project.projectId);
+  const latestJob = exportJobs.at(-1);
+
+  const header = document.createElement("div");
+  header.className = "panel-header";
+  const heading = document.createElement("h3");
+  heading.textContent = "Jira Export";
+  const status = document.createElement("p");
+  status.className = "draft-status";
+  status.textContent = latestJob
+    ? `${formatStatus(latestJob.status)} export ${latestJob.exportJobId}`
+    : "No Jira export has been submitted.";
+  header.append(heading, status);
+
+  const gateMessage = document.createElement("p");
+  gateMessage.className = "approval-preview";
+  gateMessage.textContent =
+    dashboard?.status === READINESS_STATUSES.READY
+      ? "Export preview is available for the approved baseline."
+      : "Jira export remains blocked while the readiness gate is closed.";
+
+  const form = document.createElement("form");
+  form.className = "jira-export-form";
+  const keyField = createInput("Jira project key", "jiraProjectKey", true);
+  keyField.querySelector("input").value = latestJob?.jiraProjectKey ?? "APOLLO";
+
+  const traceabilityField = document.createElement("label");
+  traceabilityField.className = "checkbox-field";
+  const traceability = document.createElement("input");
+  traceability.type = "checkbox";
+  traceability.name = "includeTraceabilityLinks";
+  traceability.checked = true;
+  const traceabilityText = document.createElement("span");
+  traceabilityText.textContent = "Include traceability metadata";
+  traceabilityField.append(traceability, traceabilityText);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "secondary-action";
+  submit.textContent = latestJob?.status === "failed" ? "Retry Export" : "Export Preview";
+  submit.disabled = dashboard?.status !== READINESS_STATUSES.READY || !currentUser.canExportToJira;
+
+  form.append(keyField, traceabilityField, error, submit);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    const result = aiGenerationService.exportToJira(
+      project.projectId,
+      {
+        jiraProjectKey: String(formData.get("jiraProjectKey") ?? ""),
+        exportMode: "CreateEpicsAndStories",
+        includeTraceabilityLinks: Boolean(formData.get("includeTraceabilityLinks"))
+      },
+      currentUser.actor
+    );
+
+    if (!result.ok && result.exportJob?.status !== "partial") {
+      error.textContent = result.error;
+      onChange?.();
+      return;
+    }
+
+    onChange?.();
+  });
+
+  const preview = document.createElement("div");
+  preview.className = "jira-export-preview";
+
+  if (!latestJob) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state neutral";
+    empty.textContent = "Previewed stories will appear here after export generation.";
+    preview.append(empty);
+  } else if (latestJob.errors.length > 0 && latestJob.preview.length === 0) {
+    const failed = document.createElement("p");
+    failed.className = "form-error";
+    failed.textContent = latestJob.errors[0]?.message ?? latestJob.errorSummary;
+    preview.append(failed);
+  } else {
+    const list = document.createElement("ul");
+    list.className = "jira-issue-list";
+
+    for (const issue of latestJob.preview) {
+      const item = document.createElement("li");
+      const title = document.createElement("strong");
+      title.textContent = `${issue.issueType}: ${issue.title}`;
+      const metadata = document.createElement("span");
+      metadata.textContent = `Requirement ${issue.sourceRequirementId} | Version ${issue.versionId}`;
+      item.append(title, metadata);
+      list.append(item);
+    }
+
+    preview.append(list);
+  }
+
+  const created = document.createElement("p");
+  created.className = "approval-preview";
+  created.textContent = latestJob
+    ? `${latestJob.createdIssues.length} Jira issue records created by the mock adapter.`
+    : "Mock adapter will return local issue keys for successful exports.";
+
+  panel.append(header, gateMessage, form, preview, created);
   return panel;
 }
 

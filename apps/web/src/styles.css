@@ -193,6 +193,14 @@ h2 {
   padding-top: 20px;
 }
 
+.jira-export-panel {
+  border-top: 1px solid #e2e7ef;
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+}
+
 .readiness-hero {
   align-items: center;
   border: 1px solid #d8dee8;
@@ -416,6 +424,57 @@ h2 {
 }
 
 .package-preview span {
+  color: #596579;
+  font-size: 0.86rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.jira-export-form {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.jira-export-form label {
+  display: grid;
+  gap: 6px;
+  color: #3d4756;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.jira-export-form input[type="text"],
+.jira-export-form input:not([type]) {
+  border: 1px solid #cdd6e3;
+  border-radius: 6px;
+  color: #17202a;
+  font: inherit;
+  line-height: 1.45;
+  padding: 9px 10px;
+  width: 100%;
+}
+
+.jira-export-preview {
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.jira-issue-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.jira-issue-list li {
+  display: grid;
+  gap: 4px;
+}
+
+.jira-issue-list span {
   color: #596579;
   font-size: 0.86rem;
   font-weight: 700;
@@ -933,6 +992,7 @@ h4 {
     .dashboard-stats,
     .score-breakdown,
     .package-checklist,
+    .jira-export-form,
     .trace-link-form,
   .acceptance-criteria-form {
     grid-template-columns: 1fr;

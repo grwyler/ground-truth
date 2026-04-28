@@ -11,6 +11,7 @@ import { createApprovalsRoute } from "./routes/approvals.js";
 import { createCertificationPackageRoute } from "./routes/certification-package.js";
 import { createDecisionObjectsRoute } from "./routes/decision-objects.js";
 import { createDocumentsRoute } from "./routes/documents.js";
+import { createJiraExportRoute } from "./routes/jira-export.js";
 import { createOverridesRoute } from "./routes/overrides.js";
 import { createProjectsRoute, sendJson } from "./routes/projects.js";
 import { createReadinessRoute } from "./routes/readiness.js";
@@ -27,6 +28,7 @@ export function createApiServer({
   const handleApprovalsRoute = createApprovalsRoute({ projectRepository });
   const handleCertificationPackageRoute = createCertificationPackageRoute({ projectRepository });
   const handleDecisionObjectsRoute = createDecisionObjectsRoute({ projectRepository });
+  const handleJiraExportRoute = createJiraExportRoute({ projectRepository });
   const handleOverridesRoute = createOverridesRoute({ projectRepository });
   const handleProjectsRoute = createProjectsRoute({ projectRepository });
   const handleReadinessRoute = createReadinessRoute({ projectRepository });
@@ -58,6 +60,10 @@ export function createApiServer({
     }
 
     if (await handleCertificationPackageRoute(request, response)) {
+      return;
+    }
+
+    if (await handleJiraExportRoute(request, response)) {
       return;
     }
 

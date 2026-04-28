@@ -1,5 +1,15 @@
 # Done Log
 
+## 2026-04-28 - MVP-018
+
+- Added Jira export domain helpers for Ready-to-Build gating, Jira project key validation, deterministic requirement-to-story preview mapping, traceability metadata, approval metadata, export job summaries, blocked-attempt records, and export audit events.
+- Added a mock Jira adapter boundary with completed, failed, and partial export states that preserves created issue mappings and actionable errors.
+- Added `POST /api/v1/projects/{projectId}/integrations/jira/export` and `GET /api/v1/projects/{projectId}/integrations/jira/export-jobs/{exportJobId}` with authorization, readiness gating, blocked export details, persisted export jobs, status retrieval, and audit logging.
+- Extended the in-memory repository with Jira export list/find/create behavior.
+- Added a browser-local Jira export panel with gate messaging, target project key field, traceability toggle, export preview, created issue count, failed-state visibility, and retry affordance.
+- Added unit, API, and local dashboard coverage for blocked Not Ready export, successful mock export/status retrieval, failed mock export, unauthorized export, preview mapping, traceability metadata, and audit records.
+- Verified with `npm test -- --test-name-pattern=jira`, `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+
 ## 2026-04-28 - MVP-017
 
 - Added certification package domain helpers for Ready-to-Build eligibility, package metadata, JSON preview assembly, version identifiers, traceability, approvals, risks, blockers, overrides, and audit event creation.

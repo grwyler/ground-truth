@@ -219,6 +219,112 @@ test("local certification package preview is generated only after the gate is op
   assert.equal(service.listAuditEvents().at(-1).entity_type, "certification_package");
 });
 
+test("local Jira export preview is gated and preserves traceability metadata", () => {
+  const projectService = createLocalProjectService([
+    {
+      projectId: "project-dashboard-jira",
+      name: "Dashboard Jira Project",
+      description: null,
+      customer: null,
+      contractNumber: null,
+      programName: null,
+      status: "draft",
+      readinessStatus: "not_ready",
+      readinessScore: 0,
+      createdBy: programManager.id,
+      createdAt: "2026-04-28T12:00:00.000Z",
+      updatedAt: "2026-04-28T12:00:00.000Z"
+    }
+  ]);
+  const service = createLocalAiGenerationService(projectService);
+  const workflow = service.createDecisionObject(
+    "project-dashboard-jira",
+    {
+      type: DECISION_OBJECT_TYPES.WORKFLOW,
+      title: "Jira workflow",
+      content: { summary: "Operator validates the Jira export workflow." },
+      ownerId: operatorRepresentative.id
+    },
+    programManager
+  );
+  const requirement = service.createDecisionObject(
+    "project-dashboard-jira",
+    {
+      type: DECISION_OBJECT_TYPES.REQUIREMENT,
+      title: "Jira requirement",
+      content: {
+        requirement: "The system shall export Jira stories.",
+        acceptance_criteria: ["Stories include source requirement IDs."]
+      },
+      ownerId: engineeringLead.id
+    },
+    programManager
+  );
+  const blocked = service.exportToJira(
+    "project-dashboard-jira",
+    { jiraProjectKey: "GT" },
+    engineeringLead
+  );
+  const testObject = service.createDecisionObject(
+    "project-dashboard-jira",
+    {
+      type: DECISION_OBJECT_TYPES.TEST,
+      title: "Jira export acceptance criteria",
+      content: { acceptance_criteria: ["Traceability metadata is present."] },
+      ownerId: engineeringLead.id
+    },
+    programManager
+  );
+
+  service.createTraceLink(
+    "project-dashboard-jira",
+    requirement.decisionObject.objectId,
+    {
+      targetObjectId: workflow.decisionObject.objectId,
+      relationshipType: "derived_from"
+    },
+    programManager
+  );
+  service.createTraceLink(
+    "project-dashboard-jira",
+    requirement.decisionObject.objectId,
+    {
+      targetObjectId: testObject.decisionObject.objectId,
+      relationshipType: "validated_by"
+    },
+    programManager
+  );
+  service.submitApproval(
+    "project-dashboard-jira",
+    workflow.decisionObject.objectId,
+    { version: 1, approvalDecision: "approved", comment: "Workflow is ready." },
+    operatorRepresentative
+  );
+  service.submitApproval(
+    "project-dashboard-jira",
+    requirement.decisionObject.objectId,
+    { version: 1, approvalDecision: "approved", comment: "Requirement is ready." },
+    customerPm
+  );
+  const exported = service.exportToJira(
+    "project-dashboard-jira",
+    {
+      jiraProjectKey: "GT",
+      exportMode: "CreateEpicsAndStories",
+      includeTraceabilityLinks: true
+    },
+    engineeringLead
+  );
+
+  assert.equal(blocked.ok, false);
+  assert.equal(exported.ok, true);
+  assert.equal(exported.exportJob.status, "completed");
+  assert.equal(exported.exportJob.createdIssues[0].jiraIssueKey, "GT-1");
+  assert.equal(exported.exportJob.preview[0].workflowLink.objectId, workflow.decisionObject.objectId);
+  assert.equal(service.listJiraExports("project-dashboard-jira").length, 1);
+  assert.equal(service.listAuditEvents().at(-1).entity_type, "jira_export");
+});
+
 test("local readiness dashboard opens permitted path after PM override", () => {
   const projectService = createLocalProjectService([
     {
