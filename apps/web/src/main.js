@@ -7,6 +7,7 @@ import {
   buildAiGenerationAuditEvent,
   buildDecisionObjectCreate,
   buildDecisionObjectUpdate,
+  buildOwnerAssignment,
   buildDocumentRecord,
   buildQueuedAiGenerationJob,
   isRejectedDecisionDraft,
@@ -17,6 +18,7 @@ import {
   markAiGenerationJobRunning,
   normalizeAiDraftOutput,
   rejectDecisionDraft,
+  SEEDED_MVP_USERS,
   toAiGenerationJobSummary,
   toDecisionObjectSummary,
   toDocumentSummary,
@@ -253,8 +255,19 @@ export function createLocalAiGenerationService(
     return toDecisionObjectSummary(update.decisionObject, update.version);
   }
 
+  function listAssignableOwners() {
+    return SEEDED_MVP_USERS.map((user) => ({
+      userId: user.id,
+      displayName: user.displayName,
+      email: user.email,
+      role: user.role
+    }));
+  }
+
   return Object.freeze({
     listDecisionObjects,
+
+    listAssignableOwners,
 
     createDecisionObject(projectId, input, actor) {
       const created = buildDecisionObjectCreate(
@@ -314,6 +327,35 @@ export function createLocalAiGenerationService(
       return {
         ok: true,
         decisionObject: persistDraftUpdate(update)
+      };
+    },
+
+    assignOwner(projectId, objectId, ownerId, actor) {
+      const draft = findDraft(projectId, objectId);
+
+      if (!draft) {
+        return { ok: false, error: "Decision object was not found." };
+      }
+
+      const assignment = buildOwnerAssignment(
+        draft.decisionObject,
+        { ownerId },
+        actor,
+        {
+          assignableOwners: listAssignableOwners()
+        }
+      );
+
+      if (!assignment.ok) {
+        return { ok: false, error: "Select an owner assigned to this project." };
+      }
+
+      return {
+        ok: true,
+        decisionObject: persistDraftUpdate({
+          decisionObject: assignment.decisionObject,
+          version: draft.version
+        })
       };
     },
 
@@ -892,7 +934,7 @@ function renderDraftReviewWorkspace(
         const title = document.createElement("strong");
         title.textContent = draft.title;
         const meta = document.createElement("span");
-        meta.textContent = formatDraftMeta(draft);
+        meta.textContent = formatDraftMeta(draft, aiGenerationService.listAssignableOwners());
         button.append(title, meta);
         group.append(button);
       }
@@ -938,10 +980,17 @@ function renderDraftReviewWorkspace(
     contentField.append(contentArea);
 
     const reasonField = createInput("Change reason", "changeReason");
-
     const error = document.createElement("p");
     error.className = "form-error";
     error.setAttribute("role", "alert");
+    const ownerField = renderOwnerAssignmentField(
+      project,
+      draft,
+      currentUser,
+      aiGenerationService,
+      onChange,
+      error
+    );
 
     const actions = document.createElement("div");
     actions.className = "draft-actions";
@@ -961,7 +1010,7 @@ function renderDraftReviewWorkspace(
     reject.disabled = !currentUser.canEditProject;
     actions.append(save, accept, reject);
 
-    form.append(titleField, contentField, reasonField, error, actions);
+    form.append(titleField, contentField, reasonField, ownerField, error, actions);
 
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -1014,7 +1063,7 @@ function renderDraftReviewWorkspace(
       onChange();
     });
 
-    const overlay = renderDraftOverlay(draft);
+    const overlay = renderDraftOverlay(draft, aiGenerationService.listAssignableOwners());
     editor.append(header, form, overlay);
   }
 
@@ -1024,14 +1073,65 @@ function renderDraftReviewWorkspace(
   return workspace;
 }
 
-function renderDraftOverlay(draft) {
+function renderOwnerAssignmentField(
+  project,
+  draft,
+  currentUser,
+  aiGenerationService,
+  onChange,
+  error
+) {
+  const field = document.createElement("label");
+  field.textContent = "Owner";
+  const select = document.createElement("select");
+  select.name = "ownerId";
+  select.disabled = !currentUser.canManageProject;
+
+  const missing = document.createElement("option");
+  missing.value = "";
+  missing.textContent = "Ownership needed";
+  select.append(missing);
+
+  for (const owner of aiGenerationService.listAssignableOwners()) {
+    const option = document.createElement("option");
+    option.value = owner.userId;
+    option.textContent = `${owner.displayName} (${formatStatus(owner.role)})`;
+    select.append(option);
+  }
+
+  select.value = draft.ownerId ?? "";
+  select.addEventListener("change", () => {
+    if (!select.value) {
+      return;
+    }
+
+    const result = aiGenerationService.assignOwner(
+      project.projectId,
+      draft.objectId,
+      select.value,
+      currentUser.actor
+    );
+
+    if (!result.ok) {
+      error.textContent = result.error;
+      return;
+    }
+
+    onChange();
+  });
+
+  field.append(select);
+  return field;
+}
+
+function renderDraftOverlay(draft, owners = []) {
   const overlay = document.createElement("aside");
   overlay.className = "draft-overlay";
   overlay.setAttribute("aria-label", "Draft details");
 
   const sourceDocumentIds = draft.content?.source_document_ids ?? [];
   const rows = [
-    ["Owner", draft.ownerId ?? "Ownership needed"],
+    ["Owner", formatOwner(draft.ownerId, owners)],
     ["Status", formatStatus(draft.status)],
     ["Version", `v${draft.currentVersion}`],
     ["Source", sourceDocumentIds.length > 0 ? sourceDocumentIds.join(", ") : "No source reference"],
@@ -1092,8 +1192,11 @@ function editableTextToDraftContent(draft, text) {
   return { summary: value };
 }
 
-function formatDraftMeta(draft) {
-  return `${formatDraftReviewStatus(draft)} | v${draft.currentVersion}`;
+function formatDraftMeta(draft, owners = []) {
+  return `${formatDraftReviewStatus(draft)} | v${draft.currentVersion} | ${formatOwner(
+    draft.ownerId,
+    owners
+  )}`;
 }
 
 function formatDraftReviewStatus(draft) {
@@ -1110,6 +1213,14 @@ function getDraftRequiredAction(draft) {
   }
 
   return "Review, edit, accept, or reject";
+}
+
+function formatOwner(ownerId, owners = []) {
+  if (!ownerId) {
+    return "Ownership needed";
+  }
+
+  return owners.find((owner) => owner.userId === ownerId)?.displayName ?? ownerId;
 }
 
 function formatDocumentValidationError(error) {

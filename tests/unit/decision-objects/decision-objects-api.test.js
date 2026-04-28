@@ -246,6 +246,68 @@ test("decision object API requires change reason once approvals exist", async ()
   }
 });
 
+test("decision object API assigns owners and audits ownership changes", async () => {
+  const repository = createRepository();
+  const server = await listen(createApiServer({ projectRepository: repository }));
+  const baseUrl = getBaseUrl(server);
+
+  try {
+    const response = await fetch(
+      `${baseUrl}/api/v1/projects/project-draft-api/decision-objects/obj-draft-api/owner`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ownerId: "user-eng-001"
+        })
+      }
+    );
+    const result = await response.json();
+    const auditEvents = repository.listAuditEvents("project-draft-api");
+
+    assert.equal(response.status, 200);
+    assert.equal(result.decisionObject.ownerId, "user-eng-001");
+    assert.equal(result.decisionObject.currentVersion, 1);
+    assert.equal(auditEvents.length, 1);
+    assert.equal(auditEvents[0].details.review_status, "owner_assigned");
+    assert.equal(auditEvents[0].details.owner_id, "user-eng-001");
+  } finally {
+    server.close();
+  }
+});
+
+test("decision object API blocks unauthorized ownership reassignment", async () => {
+  const repository = createRepository();
+  const server = await listen(createApiServer({ projectRepository: repository }));
+  const baseUrl = getBaseUrl(server);
+
+  try {
+    const response = await fetch(
+      `${baseUrl}/api/v1/projects/project-draft-api/decision-objects/obj-draft-api/owner`,
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          "x-user-id": "user-eng-001"
+        },
+        body: JSON.stringify({
+          ownerId: "user-operator-001"
+        })
+      }
+    );
+    const result = await response.json();
+
+    assert.equal(response.status, 403);
+    assert.equal(result.error, "FORBIDDEN");
+    assert.equal(
+      repository.findDecisionObject("project-draft-api", "obj-draft-api").owner_id,
+      null
+    );
+  } finally {
+    server.close();
+  }
+});
+
 test("decision object API blocks unauthorized draft edits", async () => {
   const repository = createRepository();
   const server = await listen(createApiServer({ projectRepository: repository }));

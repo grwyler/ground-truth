@@ -420,6 +420,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-009
 
+**Status:** Complete.
+
 **Title:** Implement ownership assignment
 
 **Goal:** Ensure every decision object has a named accountable owner.

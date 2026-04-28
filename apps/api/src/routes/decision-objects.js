@@ -6,8 +6,11 @@ import {
   buildDecisionObjectAuditEvent,
   buildDecisionObjectCreate,
   buildDecisionObjectUpdate,
+  buildOwnerAssignment,
+  buildOwnerAssignmentAuditEvent,
   isRejectedDecisionDraft,
   rejectDecisionDraft,
+  toAssignableOwnerSummary,
   toDecisionObjectSummary,
   toDecisionObjectVersionSummary
 } from "../../../../packages/domain/src/index.js";
@@ -154,8 +157,8 @@ export function createDecisionObjectsRoute({ projectRepository, now, idGenerator
         return true;
       }
 
-      if (request.method === "PATCH" && pathParts.length === 6) {
-        const authorization = authorize(session.actor, PERMISSIONS.EDIT_PROJECT);
+      if (request.method === "PATCH" && pathParts.length === 7 && pathParts[6] === "owner") {
+        const authorization = authorize(session.actor, PERMISSIONS.MANAGE_PROJECT);
 
         if (!authorization.allowed) {
           sendJson(response, 403, { error: "FORBIDDEN" });
@@ -163,6 +166,73 @@ export function createDecisionObjectsRoute({ projectRepository, now, idGenerator
         }
 
         const body = await readJsonBody(request);
+        const assignment = buildOwnerAssignment(
+          decisionObject,
+          body,
+          session.actor,
+          {
+            assignableOwners: listAssignableOwnerSummaries(projectRepository, projectId),
+            now
+          }
+        );
+
+        if (!assignment.ok) {
+          sendJson(response, 400, {
+            error: "VALIDATION_ERROR",
+            details: assignment.validation.errors
+          });
+          return true;
+        }
+
+        const auditEvent = buildOwnerAssignmentAuditEvent(assignment, session.actor, {
+          idGenerator,
+          now
+        });
+        const updatedDecisionObject = projectRepository.assignDecisionObjectOwner(
+          assignment.decisionObject,
+          auditEvent
+        );
+
+        sendJson(response, 200, {
+          decisionObject: toDecisionObjectSummary(updatedDecisionObject, version)
+        });
+        return true;
+      }
+
+      if (request.method === "PATCH" && pathParts.length === 6) {
+        const body = await readJsonBody(request);
+        const changesOwner =
+          body.ownerId !== undefined || body.owner_id !== undefined;
+        const authorization = authorize(
+          session.actor,
+          changesOwner ? PERMISSIONS.MANAGE_PROJECT : PERMISSIONS.EDIT_PROJECT
+        );
+
+        if (!authorization.allowed) {
+          sendJson(response, 403, { error: "FORBIDDEN" });
+          return true;
+        }
+
+        if (changesOwner) {
+          const assignmentValidation = buildOwnerAssignment(
+            decisionObject,
+            body,
+            session.actor,
+            {
+              assignableOwners: listAssignableOwnerSummaries(projectRepository, projectId),
+              now
+            }
+          );
+
+          if (!assignmentValidation.ok) {
+            sendJson(response, 400, {
+              error: "VALIDATION_ERROR",
+              details: assignmentValidation.validation.errors
+            });
+            return true;
+          }
+        }
+
         const approvals = projectRepository.listDecisionObjectApprovals?.(
           decisionObject.object_id
         ) ?? [];
@@ -269,4 +339,10 @@ function listDecisionObjectSummaries(projectRepository, projectId) {
 
     return toDecisionObjectSummary(decisionObject, version);
   });
+}
+
+function listAssignableOwnerSummaries(projectRepository, projectId) {
+  return (projectRepository.listProjectAssignableOwners?.(projectId) ?? []).map(
+    ({ user, roleAssignment }) => toAssignableOwnerSummary(user, roleAssignment)
+  );
 }

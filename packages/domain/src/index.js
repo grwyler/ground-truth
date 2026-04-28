@@ -20,5 +20,6 @@ export * from "./ai.js";
 export * from "./decision-objects.js";
 export * from "./documents.js";
 export * from "./models/index.js";
+export * from "./ownership.js";
 export * from "./projects.js";
 export * from "./roles.js";

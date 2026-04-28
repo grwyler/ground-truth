@@ -1,6 +1,7 @@
 import { createMvpSeedData } from "../seed/mvp-seed.js";
 
 export function createInMemoryProjectRepository(seedData = createMvpSeedData()) {
+  const defaultSeedData = createMvpSeedData();
   const state = {
     projects: seedData.projects.map(cloneRecord),
     documents: (seedData.documents ?? []).map(cloneRecord),
@@ -8,7 +9,9 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
     decisionObjects: (seedData.decisionObjects ?? []).map(cloneRecord),
     decisionObjectVersions: (seedData.decisionObjectVersions ?? []).map(cloneRecord),
     approvals: (seedData.approvals ?? []).map(cloneRecord),
-    auditEvents: seedData.auditEvents.map(cloneRecord)
+    users: (seedData.users ?? defaultSeedData.users).map(cloneRecord),
+    roleAssignments: (seedData.roleAssignments ?? defaultSeedData.roleAssignments).map(cloneRecord),
+    auditEvents: (seedData.auditEvents ?? []).map(cloneRecord)
   };
 
   return Object.freeze({
@@ -119,6 +122,31 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
         .map(cloneRecord);
     },
 
+    listProjectAssignableOwners(projectId) {
+      const projectAssignments = state.roleAssignments.filter(
+        (assignment) => assignment.project_id === projectId && assignment.object_id === null
+      );
+      const assignments =
+        projectAssignments.length > 0
+          ? projectAssignments
+          : state.roleAssignments.filter((assignment) => assignment.object_id === null);
+
+      return assignments
+        .map((assignment) => {
+          const user = state.users.find((candidate) => candidate.user_id === assignment.user_id);
+
+          if (!user) {
+            return null;
+          }
+
+          return {
+            user: cloneRecord(user),
+            roleAssignment: cloneRecord(assignment)
+          };
+        })
+        .filter(Boolean);
+    },
+
     createDecisionObject(decisionObject, version, auditEvent) {
       state.decisionObjects.push(cloneRecord(decisionObject));
       state.decisionObjectVersions.push(cloneRecord(version));
@@ -190,6 +218,24 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
         decisionObject: cloneRecord(decisionObject),
         version: cloneRecord(version)
       };
+    },
+
+    assignDecisionObjectOwner(decisionObject, auditEvent) {
+      const decisionObjectIndex = state.decisionObjects.findIndex(
+        (candidate) => candidate.object_id === decisionObject.object_id
+      );
+
+      if (decisionObjectIndex === -1) {
+        throw new Error(`Unknown decision object: ${decisionObject.object_id}`);
+      }
+
+      state.decisionObjects[decisionObjectIndex] = cloneRecord(decisionObject);
+
+      if (auditEvent) {
+        state.auditEvents.push(cloneRecord(auditEvent));
+      }
+
+      return cloneRecord(decisionObject);
     },
 
     createDecisionDrafts(decisionObjects, decisionObjectVersions) {

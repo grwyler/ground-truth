@@ -1,5 +1,14 @@
 # Done Log
 
+## 2026-04-28 - MVP-009
+
+- Added ownership assignment domain helpers for validating project-assigned owners, restricting owner changes to Draft/In Review objects, and producing owner-change audit details.
+- Extended the in-memory repository with users, role assignments, assignable owner lookup, and owner assignment persistence.
+- Added `PATCH /api/v1/projects/{projectId}/decision-objects/{objectId}/owner` for PM-controlled ownership changes and blocked non-PM ownership reassignment through the generic object update path.
+- Added browser-local owner selectors, owner display text, and explicit missing-owner prompts in the draft review workspace.
+- Added unit/API coverage for owner validation, audit details, successful assignment, unauthorized reassignment, and version preservation.
+- Verified with `npm test`, `npm run lint`, `npm run typecheck`, and `npm run build`.
+
 ## 2026-04-28 - MVP-008
 
 - Added decision object creation and versioned update domain helpers, including meaningful-change detection and change-reason enforcement when prior approvals exist.
