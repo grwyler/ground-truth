@@ -739,6 +739,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-015
 
+**Status:** Complete.
+
 **Title:** Build readiness dashboard and project gate UI
 
 **Goal:** Explain project readiness status, blockers, owners, pending approvals, risks, overrides, and next actions in one leadership-ready view.

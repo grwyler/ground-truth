@@ -6,6 +6,8 @@ import {
   DRAFT_REVIEW_STATUSES,
   DOCUMENT_UPLOAD_STATUSES,
   DOCUMENT_VALIDATION_ERRORS,
+  BLOCKER_STATUSES,
+  BLOCKER_TYPES,
   TRACE_RELATIONSHIP_TYPES,
   acceptDecisionDraft,
   buildAcceptanceCriteriaCreate,
@@ -20,6 +22,7 @@ import {
   buildDocumentRecord,
   buildQueuedAiGenerationJob,
   buildTraceLinkCreate,
+  evaluateProjectReadiness,
   isRejectedDecisionDraft,
   isSupportedDocumentFileName,
   getApplicationMetadata,
@@ -29,6 +32,7 @@ import {
   markAiGenerationJobRunning,
   normalizeAiDraftOutput,
   rejectDecisionDraft,
+  READINESS_STATUSES,
   SEEDED_MVP_USERS,
   toAiGenerationJobSummary,
   toAcceptanceCriteriaSummary,
@@ -37,6 +41,7 @@ import {
   toDecisionObjectSummary,
   toDocumentSummary,
   toProjectSummary,
+  toReadinessResponse,
   toTraceLinkSummary
 } from "../../../packages/domain/src/index.js";
 import { createMvpSeedData } from "../../../packages/db/src/index.js";
@@ -211,13 +216,15 @@ export function createLocalDocumentService(
 export function createLocalAiGenerationService(
   projectService = createLocalProjectService(),
   documentService = createLocalDocumentService(),
-  aiDraftAdapter = createDeterministicDraftAdapter()
+  aiDraftAdapter = createDeterministicDraftAdapter(),
+  seedData = createMvpSeedData()
 ) {
-  const jobs = [];
-  const decisionObjects = [];
-  const decisionObjectVersions = [];
-  const traceLinks = [];
-  const approvals = [];
+  const jobs = [...(seedData.aiGenerationJobs ?? [])];
+  const decisionObjects = [...(seedData.decisionObjects ?? [])];
+  const decisionObjectVersions = [...(seedData.decisionObjectVersions ?? [])];
+  const traceLinks = [...(seedData.traceLinks ?? [])];
+  const approvals = [...(seedData.approvals ?? [])];
+  const overrides = [...(seedData.overrides ?? [])];
   const auditEvents = [];
   let draftIdSequence = 0;
 
@@ -412,6 +419,67 @@ export function createLocalAiGenerationService(
     }.`;
   }
 
+  function getReadinessDashboard(projectId) {
+    const project = projectService
+      .listProjects()
+      .find((candidate) => candidate.projectId === projectId);
+
+    if (!project) {
+      return null;
+    }
+
+    const projectDecisionObjects = decisionObjects.filter(
+      (decisionObject) => decisionObject.project_id === projectId
+    );
+    const projectDecisionObjectIds = new Set(
+      projectDecisionObjects.map((decisionObject) => decisionObject.object_id)
+    );
+    const result = evaluateProjectReadiness(toProjectRecord(project), {
+      decisionObjects: projectDecisionObjects,
+      decisionObjectVersions: decisionObjectVersions.filter((version) =>
+        projectDecisionObjectIds.has(version.object_id)
+      ),
+      traceLinks: traceLinks.filter((traceLink) => traceLink.project_id === projectId),
+      approvals: approvals.filter((approval) => projectDecisionObjectIds.has(approval.object_id)),
+      overrides: overrides.filter((override) => override.project_id === projectId)
+    });
+    const readiness = toReadinessResponse(result, toProjectRecord(project));
+    const owners = listAssignableOwners();
+    const hardBlockers = readiness.hardBlockers.map((blocker) => ({
+      ...blocker,
+      ownerName: formatOwner(blocker.ownerId, owners),
+      fixLabel: getBlockerFixLabel(blocker)
+    }));
+    const resolvedBlockers = readiness.resolvedBlockers.map((blocker) => ({
+      ...blocker,
+      ownerName: formatOwner(blocker.ownerId, owners),
+      fixLabel: getBlockerFixLabel(blocker)
+    }));
+    const openRisks = projectDecisionObjects.filter(
+      (decisionObject) =>
+        decisionObject.type === DECISION_OBJECT_TYPES.RISK &&
+        decisionObject.status !== "rejected"
+    );
+
+    return Object.freeze({
+      ...readiness,
+      hardBlockers: Object.freeze(hardBlockers),
+      resolvedBlockers: Object.freeze(resolvedBlockers),
+      pendingApprovalCount: hardBlockers.filter(
+        (blocker) => blocker.type === BLOCKER_TYPES.MISSING_APPROVAL
+      ).length,
+      openRiskCount: openRisks.length,
+      overrideCount: readiness.overrides.length,
+      jiraExportDisabled: readiness.status !== READINESS_STATUSES.READY,
+      scoreBreakdown: Object.freeze({
+        hardBlockers: hardBlockers.length,
+        resolvedBlockers: resolvedBlockers.length,
+        warnings: readiness.warnings.length,
+        ruleSetVersion: readiness.ruleSetVersion
+      })
+    });
+  }
+
   return Object.freeze({
     listDecisionObjects,
 
@@ -425,6 +493,8 @@ export function createLocalAiGenerationService(
 
     listApprovalQueue,
 
+    getReadinessDashboard,
+
     createDecisionObject(projectId, input, actor) {
       const created = buildDecisionObjectCreate(
         {
@@ -436,10 +506,7 @@ export function createLocalAiGenerationService(
           idGenerator: (kind) => {
             draftIdSequence += 1;
             return `local-${kind}-${draftIdSequence}`;
-          },
-          hasExistingApprovals: approvals.some(
-            (approval) => approval.object_id === draft.decisionObject.object_id
-          )
+          }
         }
       );
 
@@ -858,7 +925,8 @@ function renderProjectWorkspace(
   project,
   currentUser,
   documentService,
-  aiGenerationService
+  aiGenerationService,
+  selectedObjectId = null
 ) {
   container.innerHTML = "";
 
@@ -898,7 +966,18 @@ function renderProjectWorkspace(
       project,
       currentUser,
       documentService,
-      aiGenerationService
+      aiGenerationService,
+      selectedObjectId
+    );
+  });
+  const readinessDashboard = renderReadinessDashboard(project, currentUser, aiGenerationService, (objectId) => {
+    renderProjectWorkspace(
+      container,
+      project,
+      currentUser,
+      documentService,
+      aiGenerationService,
+      objectId
     );
   });
   const aiPanel = renderAiGenerationPanel(
@@ -912,9 +991,11 @@ function renderProjectWorkspace(
         project,
         currentUser,
         documentService,
-        aiGenerationService
+        aiGenerationService,
+        selectedObjectId
       );
-    }
+    },
+    selectedObjectId
   );
   const approvalPanel = renderApprovalCenter(project, currentUser, aiGenerationService, () => {
     renderProjectWorkspace(
@@ -922,11 +1003,12 @@ function renderProjectWorkspace(
       project,
       currentUser,
       documentService,
-      aiGenerationService
+      aiGenerationService,
+      selectedObjectId
     );
   });
 
-  container.append(heading, meta, documentPanel, aiPanel, approvalPanel);
+  container.append(heading, meta, readinessDashboard, documentPanel, aiPanel, approvalPanel);
 }
 
 function createInput(label, name, required = false) {
@@ -1036,7 +1118,8 @@ function renderAiGenerationPanel(
   currentUser,
   documentService,
   aiGenerationService,
-  onChange
+  onChange,
+  selectedObjectId = null
 ) {
   const panel = document.createElement("section");
   panel.className = "ai-panel";
@@ -1098,10 +1181,181 @@ function renderAiGenerationPanel(
       currentUser,
       aiGenerationService,
       drafts,
-      onChange
+      onChange,
+      selectedObjectId
     )
   );
   return panel;
+}
+
+function renderReadinessDashboard(project, currentUser, aiGenerationService, onOpenObject) {
+  const dashboard = aiGenerationService.getReadinessDashboard(project.projectId);
+  const panel = document.createElement("section");
+  panel.className = "readiness-dashboard";
+  panel.setAttribute("aria-label", "Readiness dashboard");
+
+  if (!dashboard) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "Readiness is unavailable for this project.";
+    panel.append(empty);
+    return panel;
+  }
+
+  const header = document.createElement("div");
+  header.className = `readiness-hero ${
+    dashboard.status === READINESS_STATUSES.READY ? "ready" : "not-ready"
+  }`;
+  const statusGroup = document.createElement("div");
+  const eyebrow = document.createElement("p");
+  eyebrow.className = "readiness-eyebrow";
+  eyebrow.textContent = "Readiness Gate";
+  const title = document.createElement("h3");
+  title.textContent = formatStatus(dashboard.status);
+  const summary = document.createElement("p");
+  summary.className = "approval-preview";
+  summary.textContent = dashboard.summary;
+  statusGroup.append(eyebrow, title, summary);
+
+  const scoreButton = document.createElement("button");
+  scoreButton.type = "button";
+  scoreButton.className = "readiness-score";
+  scoreButton.setAttribute("aria-expanded", "false");
+  scoreButton.textContent = `${dashboard.readinessScore}%`;
+  header.append(statusGroup, scoreButton);
+
+  const breakdown = document.createElement("dl");
+  breakdown.className = "score-breakdown";
+  breakdown.hidden = true;
+  for (const [label, value] of [
+    ["Open hard blockers", dashboard.scoreBreakdown.hardBlockers],
+    ["Resolved or overridden blockers", dashboard.scoreBreakdown.resolvedBlockers],
+    ["Warnings", dashboard.scoreBreakdown.warnings],
+    ["Rule set", dashboard.scoreBreakdown.ruleSetVersion]
+  ]) {
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const description = document.createElement("dd");
+    description.textContent = String(value);
+    breakdown.append(term, description);
+  }
+  scoreButton.addEventListener("click", () => {
+    breakdown.hidden = !breakdown.hidden;
+    scoreButton.setAttribute("aria-expanded", String(!breakdown.hidden));
+  });
+
+  const stats = document.createElement("div");
+  stats.className = "dashboard-stats";
+  for (const [label, value] of [
+    ["Hard blockers", dashboard.hardBlockers.length],
+    ["Pending approvals", dashboard.pendingApprovalCount],
+    ["Open risks", dashboard.openRiskCount],
+    ["Overrides", dashboard.overrideCount]
+  ]) {
+    const stat = document.createElement("div");
+    stat.className = "dashboard-stat";
+    const valueNode = document.createElement("strong");
+    valueNode.textContent = String(value);
+    const labelNode = document.createElement("span");
+    labelNode.textContent = label;
+    stat.append(valueNode, labelNode);
+    stats.append(stat);
+  }
+
+  const blockerSection = document.createElement("section");
+  blockerSection.className = "dashboard-section";
+  const blockerHeading = document.createElement("h4");
+  blockerHeading.textContent = "Active Hard Blockers";
+  blockerSection.append(blockerHeading);
+
+  if (dashboard.hardBlockers.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state neutral";
+    empty.textContent = "No active blockers. The project may be eligible for Ready-to-Build certification.";
+    blockerSection.append(empty);
+  } else {
+    const blockerList = document.createElement("ul");
+    blockerList.className = "blocker-list";
+    for (const blocker of dashboard.hardBlockers) {
+      blockerList.append(renderBlockerItem(blocker, onOpenObject));
+    }
+    blockerSection.append(blockerList);
+  }
+
+  const overrideSection = document.createElement("section");
+  overrideSection.className = "dashboard-section override-summary";
+  const overrideHeading = document.createElement("h4");
+  overrideHeading.textContent = "Overrides";
+  overrideSection.append(overrideHeading);
+  if (dashboard.overrides.length === 0 && dashboard.resolvedBlockers.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state neutral";
+    empty.textContent = "No overrides have been recorded.";
+    overrideSection.append(empty);
+  } else {
+    const overrideList = document.createElement("ul");
+    overrideList.className = "override-list";
+    for (const override of dashboard.overrides) {
+      const item = document.createElement("li");
+      item.textContent = `${formatOwner(
+        override.authorizedBy,
+        aiGenerationService.listAssignableOwners()
+      )}: ${override.reason}`;
+      overrideList.append(item);
+    }
+    for (const blocker of dashboard.resolvedBlockers.filter(
+      (candidate) => candidate.status === BLOCKER_STATUSES.OVERRIDDEN
+    )) {
+      const item = document.createElement("li");
+      item.textContent = `${blocker.description} (${formatStatus(blocker.status)})`;
+      overrideList.append(item);
+    }
+    overrideSection.append(overrideList);
+  }
+
+  const exportSection = document.createElement("section");
+  exportSection.className = "dashboard-section export-gate";
+  const exportHeading = document.createElement("h4");
+  exportHeading.textContent = "Certification and Jira Export";
+  const exportAction = document.createElement("button");
+  exportAction.type = "button";
+  exportAction.className = "secondary-action";
+  exportAction.textContent = "Jira Export";
+  exportAction.disabled =
+    dashboard.jiraExportDisabled || !currentUser.canExportToJira;
+  const exportMessage = document.createElement("p");
+  exportMessage.className = "approval-preview";
+  exportMessage.textContent = dashboard.jiraExportDisabled
+    ? "Jira export is blocked until the readiness gate is open or a valid override state permits export."
+    : "Jira export is available for authorized users.";
+  exportSection.append(exportHeading, exportMessage, exportAction);
+
+  panel.append(header, breakdown, stats, blockerSection, overrideSection, exportSection);
+  return panel;
+}
+
+function renderBlockerItem(blocker, onOpenObject) {
+  const item = document.createElement("li");
+  item.className = "blocker-item";
+  const content = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = blocker.objectTitle ?? blocker.objectId ?? "Project blocker";
+  const description = document.createElement("p");
+  description.textContent = blocker.description;
+  const meta = document.createElement("span");
+  meta.textContent = `${formatStatus(blocker.severity)} | ${formatStatus(
+    blocker.type
+  )} | Owner: ${blocker.ownerName}`;
+  content.append(title, description, meta);
+
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "compact-action secondary-action";
+  action.textContent = blocker.fixLabel;
+  action.disabled = !blocker.objectId;
+  action.addEventListener("click", () => onOpenObject(blocker.objectId));
+  item.append(content, action);
+  return item;
 }
 
 function renderApprovalCenter(project, currentUser, decisionObjectService, onChange) {
@@ -1397,7 +1651,8 @@ function renderDraftReviewWorkspace(
   currentUser,
   aiGenerationService,
   drafts,
-  onChange
+  onChange,
+  initialSelectedObjectId = null
 ) {
   const workspace = document.createElement("div");
   workspace.className = "draft-review-workspace";
@@ -1414,7 +1669,8 @@ function renderDraftReviewWorkspace(
     (draft) => draft.content?.ai_review_status !== DRAFT_REVIEW_STATUSES.REJECTED
   );
   const firstDraft = editableDrafts[0] ?? drafts[0];
-  let selectedObjectId = firstDraft.objectId;
+  const initialDraft = drafts.find((draft) => draft.objectId === initialSelectedObjectId);
+  let selectedObjectId = initialDraft?.objectId ?? firstDraft.objectId;
 
   function selectDraft(objectId) {
     selectedObjectId = objectId;
@@ -2014,6 +2270,18 @@ function getDraftRequiredAction(draft) {
   }
 
   return "Review, edit, accept, or reject";
+}
+
+function getBlockerFixLabel(blocker) {
+  if (blocker.type === BLOCKER_TYPES.MISSING_APPROVAL) {
+    return "Review approval";
+  }
+
+  if (blocker.type === BLOCKER_TYPES.MISSING_TRACEABILITY) {
+    return "Fix traceability";
+  }
+
+  return "Open object";
 }
 
 function formatOwner(ownerId, owners = []) {

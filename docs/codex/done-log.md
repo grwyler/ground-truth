@@ -1,5 +1,14 @@
 # Done Log
 
+## 2026-04-28 - MVP-015
+
+- Added a browser-local readiness dashboard model that reuses the MVP readiness engine and returns computed gate state, blocker ownership, pending approval count, open risk count, override count, score breakdown, and Jira export gating.
+- Added a project dashboard panel with Ready/Not Ready status, clickable readiness score breakdown, active hard blocker list, prominent override summary, and disabled Jira export entry point while the gate is closed or the user lacks export permission.
+- Seeded the browser-local decision-object service with MVP seed decision objects, versions, trace links, approvals, and overrides so the default project dashboard reflects realistic readiness data.
+- Wired blocker actions to open the related decision object in the draft/workspace editor for traceability or approval fixes.
+- Added focused dashboard coverage for seeded Not Ready visibility and a completed Ready state with mandatory links and approvals.
+- Verified with `npm test -- --test-name-pattern=dashboard`, `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+
 ## 2026-04-28 - MVP-014
 
 - Added a centralized MVP readiness engine with deterministic hard-blocker rules, rule-set versioning, readiness score calculation, override-aware blocker handling, and response summaries.
