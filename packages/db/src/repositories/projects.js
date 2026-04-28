@@ -123,6 +123,40 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
         .map(cloneRecord);
     },
 
+    listProjectApprovals(projectId) {
+      const projectObjectIds = new Set(
+        state.decisionObjects
+          .filter((decisionObject) => decisionObject.project_id === projectId)
+          .map((decisionObject) => decisionObject.object_id)
+      );
+
+      return state.approvals
+        .filter((approval) => projectObjectIds.has(approval.object_id))
+        .map(cloneRecord);
+    },
+
+    createApproval(approval, decisionObject, auditEvent) {
+      const decisionObjectIndex = state.decisionObjects.findIndex(
+        (candidate) => candidate.object_id === decisionObject.object_id
+      );
+
+      if (decisionObjectIndex === -1) {
+        throw new Error(`Unknown decision object: ${decisionObject.object_id}`);
+      }
+
+      state.approvals.push(cloneRecord(approval));
+      state.decisionObjects[decisionObjectIndex] = cloneRecord(decisionObject);
+
+      if (auditEvent) {
+        state.auditEvents.push(cloneRecord(auditEvent));
+      }
+
+      return {
+        approval: cloneRecord(approval),
+        decisionObject: cloneRecord(decisionObject)
+      };
+    },
+
     listTraceLinks(projectId, objectId) {
       return state.traceLinks
         .filter(

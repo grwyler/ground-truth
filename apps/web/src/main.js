@@ -1,5 +1,6 @@
 import {
   AI_SYSTEM_ACTOR,
+  APPROVAL_DECISIONS,
   DECISION_OBJECT_TYPES,
   DRAFT_REVIEW_STATUSES,
   DOCUMENT_UPLOAD_STATUSES,
@@ -7,6 +8,8 @@ import {
   TRACE_RELATIONSHIP_TYPES,
   acceptDecisionDraft,
   buildAcceptanceCriteriaCreate,
+  buildApprovalAuditEvent,
+  buildApprovalDecision,
   buildAiGenerationAuditEvent,
   buildDecisionObjectCreate,
   buildDecisionObjectUpdate,
@@ -17,6 +20,7 @@ import {
   isRejectedDecisionDraft,
   isSupportedDocumentFileName,
   getApplicationMetadata,
+  isApprovalQueueItemForActor,
   markAiGenerationJobCompleted,
   markAiGenerationJobFailed,
   markAiGenerationJobRunning,
@@ -25,6 +29,8 @@ import {
   SEEDED_MVP_USERS,
   toAiGenerationJobSummary,
   toAcceptanceCriteriaSummary,
+  toApprovalQueueItem,
+  toApprovalSummary,
   toDecisionObjectSummary,
   toDocumentSummary,
   toProjectSummary,
@@ -208,6 +214,7 @@ export function createLocalAiGenerationService(
   const decisionObjects = [];
   const decisionObjectVersions = [];
   const traceLinks = [];
+  const approvals = [];
   const auditEvents = [];
   let draftIdSequence = 0;
 
@@ -314,6 +321,75 @@ export function createLocalAiGenerationService(
     }));
   }
 
+  function listApprovals(projectId) {
+    const objectIds = new Set(
+      decisionObjects
+        .filter((decisionObject) => decisionObject.project_id === projectId)
+        .map((decisionObject) => decisionObject.object_id)
+    );
+
+    return approvals
+      .filter((approval) => objectIds.has(approval.object_id))
+      .map((approval) => {
+        const decisionObject = decisionObjects.find(
+          (candidate) => candidate.object_id === approval.object_id
+        );
+        const version = decisionObjectVersions.find(
+          (candidate) => candidate.version_id === approval.version_id
+        );
+
+        return toApprovalSummary(approval, decisionObject, version);
+      });
+  }
+
+  function listApprovalQueue(projectId, actor) {
+    return decisionObjects
+      .filter((decisionObject) => decisionObject.project_id === projectId)
+      .map((decisionObject) => {
+        const version = decisionObjectVersions.find(
+          (candidate) =>
+            candidate.object_id === decisionObject.object_id &&
+            candidate.version_number === decisionObject.current_version
+        );
+        const objectApprovals = approvals.filter(
+          (approval) => approval.object_id === decisionObject.object_id
+        );
+
+        return { decisionObject, version, objectApprovals };
+      })
+      .filter(({ decisionObject, version, objectApprovals }) =>
+        isApprovalQueueItemForActor(decisionObject, version, objectApprovals, actor)
+      )
+      .map(({ decisionObject, version, objectApprovals }) => ({
+        ...toApprovalQueueItem(decisionObject, version, objectApprovals),
+        traceabilityStatus: summarizeTraceabilityForApproval(projectId, decisionObject)
+      }));
+  }
+
+  function summarizeTraceabilityForApproval(projectId, decisionObject) {
+    if (decisionObject.type !== DECISION_OBJECT_TYPES.REQUIREMENT) {
+      return "Traceability is not required for this object type.";
+    }
+
+    const links = listTraceLinks(projectId, decisionObject.object_id);
+    const hasWorkflowLink = links.some(
+      (link) =>
+        link.sourceObjectId === decisionObject.object_id &&
+        link.relationshipType === TRACE_RELATIONSHIP_TYPES.DERIVED_FROM &&
+        link.targetType === DECISION_OBJECT_TYPES.WORKFLOW
+    );
+    const hasTestLink = links.some(
+      (link) =>
+        link.sourceObjectId === decisionObject.object_id &&
+        link.relationshipType === TRACE_RELATIONSHIP_TYPES.VALIDATED_BY &&
+        link.targetType === DECISION_OBJECT_TYPES.TEST
+    );
+
+    return `Workflow ${hasWorkflowLink ? "linked" : "missing"}; test ${
+      hasTestLink ? "linked" : "missing"
+    }.`;
+  }
+
   return Object.freeze({
     listDecisionObjects,
 
@@ -322,6 +398,10 @@ export function createLocalAiGenerationService(
     listTraceLinks,
 
     listAcceptanceCriteria,
+
+    listApprovals,
+
+    listApprovalQueue,
 
     createDecisionObject(projectId, input, actor) {
       const created = buildDecisionObjectCreate(
@@ -517,6 +597,49 @@ export function createLocalAiGenerationService(
         ok: true,
         decisionObject: persistDraftUpdate(update),
         excludedFromReadiness: isRejectedDecisionDraft(update.decisionObject, update.version)
+      };
+    },
+
+    submitApproval(projectId, objectId, input, actor) {
+      const draft = findDraft(projectId, objectId);
+
+      if (!draft) {
+        return { ok: false, error: "Decision object was not found." };
+      }
+
+      const result = buildApprovalDecision(draft.decisionObject, draft.version, input, actor, {
+        idGenerator: (kind) => {
+          draftIdSequence += 1;
+          return `local-${kind}-${draftIdSequence}`;
+        }
+      });
+
+      if (!result.ok) {
+        return {
+          ok: false,
+          error: result.validation.errors.includes("APPROVAL_COMMENT_REQUIRED")
+            ? "Reject and request-changes decisions require a comment."
+            : "You do not have approval authority for this item."
+        };
+      }
+
+      approvals.push(result.approval);
+      auditEvents.push(
+        buildApprovalAuditEvent(result.approval, result.decisionObject, actor, {
+          idGenerator: (kind) => {
+            draftIdSequence += 1;
+            return `local-${kind}-${draftIdSequence}`;
+          }
+        })
+      );
+
+      return {
+        ok: true,
+        approval: toApprovalSummary(result.approval, result.decisionObject, draft.version),
+        decisionObject: persistDraftUpdate({
+          decisionObject: result.decisionObject,
+          version: draft.version
+        })
       };
     },
 
@@ -738,8 +861,17 @@ function renderProjectWorkspace(
       );
     }
   );
+  const approvalPanel = renderApprovalCenter(project, currentUser, aiGenerationService, () => {
+    renderProjectWorkspace(
+      container,
+      project,
+      currentUser,
+      documentService,
+      aiGenerationService
+    );
+  });
 
-  container.append(heading, meta, documentPanel, aiPanel);
+  container.append(heading, meta, documentPanel, aiPanel, approvalPanel);
 }
 
 function createInput(label, name, required = false) {
@@ -915,6 +1047,156 @@ function renderAiGenerationPanel(
     )
   );
   return panel;
+}
+
+function renderApprovalCenter(project, currentUser, decisionObjectService, onChange) {
+  const panel = document.createElement("section");
+  panel.className = "approval-panel";
+  panel.setAttribute("aria-label", "Approval center");
+
+  const header = document.createElement("div");
+  header.className = "panel-header";
+  const heading = document.createElement("h3");
+  heading.textContent = "Approval Center";
+  const count = document.createElement("p");
+  count.className = "draft-status";
+
+  const queue = decisionObjectService.listApprovalQueue(project.projectId, currentUser.actor);
+  const approvals = decisionObjectService.listApprovals(project.projectId);
+  count.textContent = `${queue.length} pending for your role`;
+  header.append(heading, count);
+  panel.append(header);
+
+  if (!currentUser.canApprove) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state neutral";
+    empty.textContent = "Approval queue is read-only for this role.";
+    panel.append(empty);
+    return panel;
+  }
+
+  if (queue.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state neutral";
+    empty.textContent = "There are no approvals waiting on you.";
+    panel.append(empty);
+  } else {
+    const list = document.createElement("div");
+    list.className = "approval-list";
+
+    for (const item of queue) {
+      list.append(renderApprovalQueueItem(project, item, currentUser, decisionObjectService, onChange));
+    }
+
+    panel.append(list);
+  }
+
+  if (approvals.length > 0) {
+    const history = document.createElement("ul");
+    history.className = "approval-history";
+
+    for (const approval of approvals.slice(-4).reverse()) {
+      const row = document.createElement("li");
+      row.textContent = `${approval.objectTitle ?? approval.objectId}: ${formatStatus(
+        approval.approvalDecision
+      )} by ${formatOwner(approval.approverId, decisionObjectService.listAssignableOwners())}`;
+      history.append(row);
+    }
+
+    panel.append(history);
+  }
+
+  return panel;
+}
+
+function renderApprovalQueueItem(project, item, currentUser, decisionObjectService, onChange) {
+  const card = document.createElement("article");
+  card.className = "approval-card";
+
+  const title = document.createElement("h4");
+  title.textContent = item.title;
+  const meta = document.createElement("p");
+  meta.className = "draft-status";
+  meta.textContent = `${formatStatus(item.objectType)} | v${item.versionNumber} | ${formatStatus(
+    item.status
+  )}`;
+
+  const preview = document.createElement("p");
+  preview.className = "approval-preview";
+  preview.textContent = approvalContentPreview(item);
+  const traceability = document.createElement("p");
+  traceability.className = "approval-preview";
+  traceability.textContent = item.traceabilityStatus;
+
+  const form = document.createElement("form");
+  form.className = "approval-form";
+
+  const commentField = document.createElement("label");
+  commentField.textContent = "Comment";
+  const comment = document.createElement("textarea");
+  comment.name = "comment";
+  comment.rows = 3;
+  commentField.append(comment);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+
+  const actions = document.createElement("div");
+  actions.className = "draft-actions";
+
+  for (const [label, decision] of [
+    ["Approve", APPROVAL_DECISIONS.APPROVED],
+    ["Request Changes", APPROVAL_DECISIONS.CHANGES_REQUESTED],
+    ["Reject", APPROVAL_DECISIONS.REJECTED]
+  ]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.className =
+      decision === APPROVAL_DECISIONS.REJECTED ? "danger-action" : "secondary-action";
+    button.addEventListener("click", () => {
+      const result = decisionObjectService.submitApproval(
+        project.projectId,
+        item.objectId,
+        {
+          version: item.versionNumber,
+          approvalDecision: decision,
+          comment: comment.value
+        },
+        currentUser.actor
+      );
+
+      if (!result.ok) {
+        error.textContent = result.error;
+        return;
+      }
+
+      form.reset();
+      onChange();
+    });
+    actions.append(button);
+  }
+
+  form.append(commentField, error, actions);
+  card.append(title, meta, preview, traceability, form);
+  return card;
+}
+
+function approvalContentPreview(item) {
+  const content = item.content ?? {};
+
+  for (const key of ["summary", "requirement", "risk", "mitigation"]) {
+    if (typeof content[key] === "string" && content[key].trim()) {
+      return content[key];
+    }
+  }
+
+  if (Array.isArray(content.acceptance_criteria)) {
+    return content.acceptance_criteria.join(" ");
+  }
+
+  return "No structured preview available.";
 }
 
 function renderDecisionObjectCreateForm(project, currentUser, decisionObjectService, onChange) {

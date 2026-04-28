@@ -575,6 +575,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-012
 
+**Status:** Complete.
+
 **Title:** Implement approval queue and version-specific decisions
 
 **Goal:** Capture approve, reject, and request-changes decisions tied to immutable object versions.

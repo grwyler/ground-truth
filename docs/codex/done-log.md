@@ -1,5 +1,14 @@
 # Done Log
 
+## 2026-04-28 - MVP-012
+
+- Added approval domain helpers for role/type authority, version-specific approval validation, approval queue filtering, status updates, and approval audit events.
+- Added `GET /api/v1/projects/{projectId}/approvals` and `POST /api/v1/projects/{projectId}/decision-objects/{objectId}/approvals`.
+- Extended the in-memory project repository with project approval listing and approval persistence that updates object approval status and writes audit records.
+- Added a browser-local approval center with role-filtered pending items, object previews, comments, approve/reject/request-changes actions, and recent approval history.
+- Added unit/API/local workspace/E2E coverage for role-specific approval authority, current-version validation, approve/reject/request-changes decisions, missing-comment validation, unauthorized approvers, queue filtering, operator workflow approval, and approval persistence.
+- Verified with `npm test -- --test-name-pattern=approval`, `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+
 ## 2026-04-28 - MVP-011
 
 - Added acceptance criteria domain helpers that create versioned Test decision objects and mandatory `validated_by` trace links from requirement objects.

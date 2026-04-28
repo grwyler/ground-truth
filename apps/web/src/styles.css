@@ -169,6 +169,14 @@ h2 {
   padding-top: 20px;
 }
 
+.approval-panel {
+  border-top: 1px solid #e2e7ef;
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+}
+
 .panel-header {
   align-items: center;
   display: flex;
@@ -389,6 +397,64 @@ h4 {
   background: #eef2f6;
   color: #596579;
   cursor: not-allowed;
+}
+
+.approval-list {
+  display: grid;
+  gap: 12px;
+}
+
+.approval-card {
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.approval-preview {
+  color: #3d4756;
+  line-height: 1.5;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.approval-form {
+  display: grid;
+  gap: 10px;
+}
+
+.approval-form label {
+  display: grid;
+  gap: 6px;
+  color: #3d4756;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.approval-form textarea {
+  border: 1px solid #cdd6e3;
+  border-radius: 6px;
+  color: #17202a;
+  font: inherit;
+  line-height: 1.45;
+  padding: 9px 10px;
+  width: 100%;
+}
+
+.approval-history {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.approval-history li {
+  border: 1px solid #e2e7ef;
+  border-radius: 6px;
+  color: #3d4756;
+  padding: 8px 10px;
 }
 
 .draft-overlay {
