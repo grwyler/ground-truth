@@ -16,6 +16,7 @@ export function createLocalCurrentUser(user = DEFAULT_CURRENT_USER) {
     canManageProject: actorHasPermission(actor, PERMISSIONS.MANAGE_PROJECT),
     canEditProject: actorHasPermission(actor, PERMISSIONS.EDIT_PROJECT),
     canApprove: actorHasPermission(actor, PERMISSIONS.APPROVE_DECISION),
+    canGenerateAiDraft: actorHasPermission(actor, PERMISSIONS.GENERATE_AI_DRAFT),
     canSubmitOverride: actorHasPermission(actor, PERMISSIONS.SUBMIT_OVERRIDE),
     canExportToJira: actorHasPermission(actor, PERMISSIONS.EXPORT_JIRA)
   });

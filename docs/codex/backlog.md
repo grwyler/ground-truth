@@ -261,6 +261,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-006
 
+**Status:** Complete.
+
 **Title:** Implement AI draft generation adapter and job lifecycle
 
 **Goal:** Convert uploaded documents into editable draft workflows, requirements, risks, and acceptance criteria candidates.

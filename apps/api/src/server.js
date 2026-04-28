@@ -6,21 +6,28 @@ import {
 import { getApplicationMetadata } from "../../../packages/domain/src/index.js";
 import { createLocalStorageAdapter } from "../../../packages/storage/src/index.js";
 import { handleAuthRoute } from "./auth/routes.js";
+import { createAiRoute } from "./routes/ai.js";
 import { createDocumentsRoute } from "./routes/documents.js";
 import { createProjectsRoute, sendJson } from "./routes/projects.js";
 
 export function createApiServer({
   metadata = getApplicationMetadata(),
   projectRepository = createInMemoryProjectRepository(),
+  aiDraftAdapter,
   storageAdapter = createLocalStorageAdapter({
     root: createPersistenceConfig().storageRoot
   })
 } = {}) {
+  const handleAiRoute = createAiRoute({ projectRepository, aiDraftAdapter });
   const handleProjectsRoute = createProjectsRoute({ projectRepository });
   const handleDocumentsRoute = createDocumentsRoute({ projectRepository, storageAdapter });
 
   return createServer(async (request, response) => {
     if (handleAuthRoute(request, response)) {
+      return;
+    }
+
+    if (await handleAiRoute(request, response)) {
       return;
     }
 

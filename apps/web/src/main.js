@@ -1,13 +1,23 @@
 import {
+  AI_SYSTEM_ACTOR,
   DOCUMENT_UPLOAD_STATUSES,
   DOCUMENT_VALIDATION_ERRORS,
+  buildAiGenerationAuditEvent,
   buildDocumentRecord,
+  buildQueuedAiGenerationJob,
   isSupportedDocumentFileName,
   getApplicationMetadata,
+  markAiGenerationJobCompleted,
+  markAiGenerationJobFailed,
+  markAiGenerationJobRunning,
+  normalizeAiDraftOutput,
+  toAiGenerationJobSummary,
+  toDecisionObjectSummary,
   toDocumentSummary,
   toProjectSummary
 } from "../../../packages/domain/src/index.js";
 import { createMvpSeedData } from "../../../packages/db/src/index.js";
+import { createDeterministicDraftAdapter } from "../../../packages/ai/src/index.js";
 import { createLocalCurrentUser } from "./lib/session/current-user.js";
 
 export function renderAppShell(
@@ -15,7 +25,8 @@ export function renderAppShell(
   metadata = getApplicationMetadata(),
   currentUser = createLocalCurrentUser(),
   projectService = createLocalProjectService(),
-  documentService = createLocalDocumentService()
+  documentService = createLocalDocumentService(),
+  aiGenerationService = createLocalAiGenerationService(projectService, documentService)
 ) {
   if (!container) {
     throw new Error("A container element is required to render the app shell.");
@@ -76,13 +87,14 @@ export function renderAppShell(
   container.append(shell);
 
   renderProjectIntake(listRegion, projectService, currentUser, (project) => {
-    renderProjectWorkspace(workspace, project, currentUser, documentService);
+    renderProjectWorkspace(workspace, project, currentUser, documentService, aiGenerationService);
   });
   renderProjectWorkspace(
     workspace,
     projectService.listProjects()[0] ?? null,
     currentUser,
-    documentService
+    documentService,
+    aiGenerationService
   );
 
   return shell;
@@ -173,6 +185,112 @@ export function createLocalDocumentService(
   });
 }
 
+export function createLocalAiGenerationService(
+  projectService = createLocalProjectService(),
+  documentService = createLocalDocumentService(),
+  aiDraftAdapter = createDeterministicDraftAdapter()
+) {
+  const jobs = [];
+  const decisionObjects = [];
+  const decisionObjectVersions = [];
+  const auditEvents = [];
+  let draftIdSequence = 0;
+
+  return Object.freeze({
+    listDecisionObjects(projectId) {
+      return decisionObjects
+        .filter((decisionObject) => decisionObject.project_id === projectId)
+        .map((decisionObject) => {
+          const version = decisionObjectVersions.find(
+            (candidate) =>
+              candidate.object_id === decisionObject.object_id &&
+              candidate.version_number === decisionObject.current_version
+          );
+
+          return toDecisionObjectSummary(decisionObject, version);
+        });
+    },
+
+    async generateDraft(projectId, actor) {
+      const project = projectService
+        .listProjects()
+        .find((candidate) => candidate.projectId === projectId);
+      const documents = documentService.listDocuments(projectId).map(toDocumentRecord);
+      const jobResult = buildQueuedAiGenerationJob(
+        {
+          projectId,
+          documents
+        },
+        actor,
+        {
+          idGenerator: () => `local-ai-job-${jobs.length + 1}`
+        }
+      );
+
+      if (!project || !jobResult.ok) {
+        return {
+          ok: false,
+          error: "Upload at least one document before AI draft generation."
+        };
+      }
+
+      jobs.push(markAiGenerationJobRunning(jobResult.job));
+      const runningJob = jobs.at(-1);
+
+      try {
+        const output = await aiDraftAdapter.generateDraft({
+          project: toProjectRecord(project),
+          documents
+        });
+        const normalized = normalizeAiDraftOutput(output, runningJob, AI_SYSTEM_ACTOR, {
+          idGenerator: () => {
+            draftIdSequence += 1;
+            return `local-ai-${draftIdSequence}`;
+          }
+        });
+
+        if (!normalized.ok) {
+          throw new Error(normalized.validation.errors.join(", "));
+        }
+
+        decisionObjects.push(...normalized.decisionObjects);
+        decisionObjectVersions.push(...normalized.decisionObjectVersions);
+        const completed = markAiGenerationJobCompleted(runningJob);
+        jobs[jobs.length - 1] = completed;
+        auditEvents.push(
+          buildAiGenerationAuditEvent(completed, AI_SYSTEM_ACTOR, {
+            generated_decision_object_count: normalized.decisionObjects.length
+          })
+        );
+
+        return {
+          ok: true,
+          job: toAiGenerationJobSummary(completed),
+          decisionObjects: this.listDecisionObjects(projectId)
+        };
+      } catch (error) {
+        const failed = markAiGenerationJobFailed(runningJob, error.message);
+        jobs[jobs.length - 1] = failed;
+        auditEvents.push(
+          buildAiGenerationAuditEvent(failed, AI_SYSTEM_ACTOR, {
+            error_message: failed.error_message
+          })
+        );
+
+        return {
+          ok: false,
+          job: toAiGenerationJobSummary(failed),
+          error: "AI draft generation failed. Uploaded documents remain available."
+        };
+      }
+    },
+
+    listAuditEvents() {
+      return [...auditEvents];
+    }
+  });
+}
+
 function renderProjectIntake(container, projectService, currentUser, onSelectProject) {
   container.innerHTML = "";
 
@@ -248,7 +366,13 @@ function renderProjectIntake(container, projectService, currentUser, onSelectPro
   container.append(list);
 }
 
-function renderProjectWorkspace(container, project, currentUser, documentService) {
+function renderProjectWorkspace(
+  container,
+  project,
+  currentUser,
+  documentService,
+  aiGenerationService
+) {
   container.innerHTML = "";
 
   if (!project) {
@@ -282,10 +406,31 @@ function renderProjectWorkspace(container, project, currentUser, documentService
   }
 
   const documentPanel = renderDocumentInventory(project, currentUser, documentService, () => {
-    renderProjectWorkspace(container, project, currentUser, documentService);
+    renderProjectWorkspace(
+      container,
+      project,
+      currentUser,
+      documentService,
+      aiGenerationService
+    );
   });
+  const aiPanel = renderAiGenerationPanel(
+    project,
+    currentUser,
+    documentService,
+    aiGenerationService,
+    () => {
+      renderProjectWorkspace(
+        container,
+        project,
+        currentUser,
+        documentService,
+        aiGenerationService
+      );
+    }
+  );
 
-  container.append(heading, meta, documentPanel);
+  container.append(heading, meta, documentPanel, aiPanel);
 }
 
 function createInput(label, name, required = false) {
@@ -390,6 +535,110 @@ function renderDocumentInventory(project, currentUser, documentService, onChange
   return panel;
 }
 
+function renderAiGenerationPanel(
+  project,
+  currentUser,
+  documentService,
+  aiGenerationService,
+  onChange
+) {
+  const panel = document.createElement("section");
+  panel.className = "ai-panel";
+  panel.setAttribute("aria-label", "AI draft generation");
+
+  const header = document.createElement("div");
+  header.className = "panel-header";
+
+  const heading = document.createElement("h3");
+  heading.textContent = "AI Draft";
+
+  const status = document.createElement("p");
+  status.className = "draft-status";
+  status.setAttribute("role", "status");
+
+  const generateButton = document.createElement("button");
+  generateButton.type = "button";
+  generateButton.className = "secondary-action";
+  generateButton.textContent = "Generate Draft";
+
+  const documents = documentService.listDocuments(project.projectId);
+  const drafts = aiGenerationService.listDecisionObjects(project.projectId);
+  generateButton.disabled = documents.length === 0 || !currentUser.canGenerateAiDraft;
+
+  generateButton.addEventListener("click", async () => {
+    generateButton.disabled = true;
+    status.textContent = "Generation running.";
+    const result = await aiGenerationService.generateDraft(project.projectId, currentUser.actor);
+
+    status.textContent = result.ok
+      ? `Generation completed with ${result.decisionObjects.length} draft objects.`
+      : result.error;
+    onChange();
+  });
+
+  header.append(heading, generateButton);
+  panel.append(header, status);
+
+  if (documents.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "AI draft generation is available after documents are uploaded.";
+    panel.append(empty);
+    return panel;
+  }
+
+  if (drafts.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state neutral";
+    empty.textContent = "No AI draft objects generated yet.";
+    panel.append(empty);
+    return panel;
+  }
+
+  const groups = [
+    ["Workflows", "workflow"],
+    ["Requirements", "requirement"],
+    ["Tests", "test"],
+    ["Risks", "risk"]
+  ];
+
+  const draftGrid = document.createElement("div");
+  draftGrid.className = "draft-grid";
+
+  for (const [label, type] of groups) {
+    const group = document.createElement("section");
+    group.className = "draft-group";
+    const groupHeading = document.createElement("h4");
+    groupHeading.textContent = label;
+    group.append(groupHeading);
+
+    const items = drafts.filter((draft) => draft.type === type);
+
+    if (items.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "empty-state neutral";
+      empty.textContent = "None yet.";
+      group.append(empty);
+    }
+
+    for (const draft of items) {
+      const item = document.createElement("article");
+      item.className = "draft-item";
+      const title = document.createElement("strong");
+      title.textContent = draft.title;
+      const meta = document.createElement("span");
+      meta.textContent = `${formatStatus(draft.status)} | AI-generated`;
+      item.append(title, meta);
+      group.append(item);
+    }
+
+    draftGrid.append(group);
+  }
+
+  panel.append(draftGrid);
+  return panel;
+}
+
 function formatDocumentValidationError(error) {
   if (error === DOCUMENT_VALIDATION_ERRORS.UNSUPPORTED_FILE_TYPE) {
     return "Unsupported file type";
@@ -400,6 +649,38 @@ function formatDocumentValidationError(error) {
   }
 
   return "Document upload is invalid";
+}
+
+function toDocumentRecord(document) {
+  return {
+    document_id: document.documentId,
+    project_id: document.projectId,
+    file_name: document.fileName,
+    document_type: document.documentType,
+    storage_uri: document.storageUri,
+    upload_status: document.uploadStatus,
+    uploaded_by: document.uploadedBy,
+    uploaded_at: document.uploadedAt,
+    extracted_text_uri: document.extractedTextUri,
+    checksum: document.checksum
+  };
+}
+
+function toProjectRecord(project) {
+  return {
+    project_id: project.projectId,
+    name: project.name,
+    description: project.description,
+    customer: project.customer,
+    contract_number: project.contractNumber,
+    program_name: project.programName,
+    status: project.status,
+    readiness_status: project.readinessStatus,
+    readiness_score: project.readinessScore,
+    created_by: project.createdBy,
+    created_at: project.createdAt,
+    updated_at: project.updatedAt
+  };
 }
 
 if (typeof document !== "undefined") {

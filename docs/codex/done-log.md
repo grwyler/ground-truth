@@ -1,5 +1,15 @@
 # Done Log
 
+## 2026-04-28 - MVP-006
+
+- Added a deterministic AI draft adapter boundary that converts uploaded documents into draft Workflow, Requirement, Test, and Risk candidates.
+- Added AI generation job lifecycle helpers for Queued, Running, Completed, and Failed states with source document IDs and `mvp-draft-v1` schema metadata.
+- Added in-memory persistence for AI generation jobs, draft decision objects, immutable draft versions, and AI generation audit events.
+- Added `POST /api/v1/projects/{projectId}/ai/generate-draft` and `GET /api/v1/projects/{projectId}/ai/generation-jobs/{generationJobId}` with PM generation authorization and readable failure state.
+- Added project workspace AI draft generation UI with disabled pre-upload state, generation status, and grouped draft object display.
+- Added unit/API coverage for draft normalization, job state transitions, successful generation, failed generation, missing documents, authorization, and local UI service behavior.
+- Verified with `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+
 ## 2026-04-28 - MVP-005
 
 - Added document upload validation for PDF, DOCX, and TXT files with deterministic checksums and document upload audit events.
