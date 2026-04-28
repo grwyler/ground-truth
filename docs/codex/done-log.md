@@ -1,5 +1,13 @@
 # Done Log
 
+## 2026-04-28 - MVP-020
+
+- Added an Apollo field service MVP pilot fixture and reusable API flow helpers for project creation, document upload, AI draft generation, draft acceptance, ownership, traceability, approvals, readiness, certification, Jira export, and override governance.
+- Added end-to-end MVP tests for the resolved-blocker Ready-to-Build path and the PM override path, including blocked Jira export before readiness, visible override risk acceptance, certification generation, Jira traceability metadata, readiness performance smoke coverage, and AI/System denial checks for approval and override.
+- Added `npm run smoke:mvp`, which resets deterministic seed data and executes both MVP pilot paths.
+- Added `docs/codex/mvp-demo-flow.md` and updated `README.md` with the MVP demo flow, verification commands, and local run instructions.
+- Verified with `npm test -- --test-name-pattern=mvp`, `npm run smoke:mvp`, `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+
 ## 2026-04-28 - MVP-019
 
 - Added centralized audit domain helpers for validating audit records, identifying sensitive audit events, requiring complete audit metadata, and producing API/UI audit summaries.

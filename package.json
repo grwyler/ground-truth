@@ -11,6 +11,7 @@
     "lint": "node scripts/lint.mjs",
     "typecheck": "node scripts/typecheck.mjs",
     "test": "node scripts/test.mjs",
+    "smoke:mvp": "node scripts/smoke-mvp.mjs",
     "build": "node scripts/build.mjs"
   },
   "engines": {

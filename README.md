@@ -26,6 +26,7 @@ Run the quality gates:
 npm run lint
 npm run typecheck
 npm test
+npm run smoke:mvp
 npm run build
 ```
 
@@ -50,6 +51,25 @@ npm run dev:web
 ```
 
 The web script renders a static shell when loaded in a browser and prints a local file hint when run from Node.
+
+Run the MVP pilot smoke flow:
+
+```bash
+npm run smoke:mvp
+```
+
+The smoke flow resets deterministic seed data, runs the Ready-to-Build happy path, runs the PM override path, verifies certification package generation, and verifies Jira export gating/preview behavior.
+
+## Running the MVP Locally
+
+1. Install dependencies with `npm install`.
+2. Reset deterministic seed data with `npm run db:seed`.
+3. Start the API in one terminal with `npm run dev:api`.
+4. Start the web shell in another terminal with `npm run dev:web`.
+5. Open `apps/web/index.html` in a browser for the static MVP UI shell.
+6. Use `x-user-id` request headers such as `user-pm-001`, `user-eng-001`, `user-operator-001`, `user-customer-pm-001`, or `user-exec-viewer-001` when exercising API routes locally.
+
+The API listens on `API_PORT` or `4000`; `GET /health` confirms that it is running. The repeatable pilot flow is documented in `docs/codex/mvp-demo-flow.md`.
 
 ## Environment
 

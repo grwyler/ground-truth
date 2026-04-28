@@ -1009,6 +1009,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-020
 
+**Status:** Complete.
+
 **Title:** Add end-to-end MVP happy path and pilot fixtures
 
 **Goal:** Prove the full MVP lifecycle from project creation through document upload, AI draft generation, approvals, readiness, certification, and Jira export gating.
