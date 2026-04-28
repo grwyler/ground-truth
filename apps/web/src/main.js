@@ -6,6 +6,7 @@ import {
   DOCUMENT_VALIDATION_ERRORS,
   TRACE_RELATIONSHIP_TYPES,
   acceptDecisionDraft,
+  buildAcceptanceCriteriaCreate,
   buildAiGenerationAuditEvent,
   buildDecisionObjectCreate,
   buildDecisionObjectUpdate,
@@ -23,6 +24,7 @@ import {
   rejectDecisionDraft,
   SEEDED_MVP_USERS,
   toAiGenerationJobSummary,
+  toAcceptanceCriteriaSummary,
   toDecisionObjectSummary,
   toDocumentSummary,
   toProjectSummary,
@@ -276,6 +278,33 @@ export function createLocalAiGenerationService(
       );
   }
 
+  function listAcceptanceCriteria(projectId, requirementObjectId) {
+    return traceLinks
+      .filter(
+        (traceLink) =>
+          traceLink.project_id === projectId &&
+          traceLink.source_object_id === requirementObjectId &&
+          traceLink.relationship_type === TRACE_RELATIONSHIP_TYPES.VALIDATED_BY
+      )
+      .map((traceLink) => {
+        const testObject = decisionObjects.find(
+          (candidate) => candidate.object_id === traceLink.target_object_id
+        );
+        const version = testObject
+          ? decisionObjectVersions.find(
+              (candidate) =>
+                candidate.object_id === testObject.object_id &&
+                candidate.version_number === testObject.current_version
+            )
+          : null;
+
+        return testObject && version
+          ? toAcceptanceCriteriaSummary(testObject, version, traceLink)
+          : null;
+      })
+      .filter(Boolean);
+  }
+
   function listAssignableOwners() {
     return SEEDED_MVP_USERS.map((user) => ({
       userId: user.id,
@@ -291,6 +320,8 @@ export function createLocalAiGenerationService(
     listAssignableOwners,
 
     listTraceLinks,
+
+    listAcceptanceCriteria,
 
     createDecisionObject(projectId, input, actor) {
       const created = buildDecisionObjectCreate(
@@ -401,6 +432,34 @@ export function createLocalAiGenerationService(
       return {
         ok: true,
         traceLink: toTraceLinkSummary(result.traceLink, source, target)
+      };
+    },
+
+    createAcceptanceCriteria(projectId, requirementObjectId, input, actor) {
+      const requirement = findDraft(projectId, requirementObjectId)?.decisionObject;
+      const result = buildAcceptanceCriteriaCreate(requirement, input, actor, {
+        idGenerator: (kind) => {
+          draftIdSequence += 1;
+          return `local-${kind}-${draftIdSequence}`;
+        }
+      });
+
+      if (!result.ok) {
+        return { ok: false, error: "Add at least one acceptance criterion to a requirement." };
+      }
+
+      decisionObjects.push(result.decisionObject);
+      decisionObjectVersions.push(result.version);
+      traceLinks.push(result.traceLink);
+
+      return {
+        ok: true,
+        acceptanceCriteria: toAcceptanceCriteriaSummary(
+          result.decisionObject,
+          result.version,
+          result.traceLink
+        ),
+        traceLink: toTraceLinkSummary(result.traceLink, requirement, result.decisionObject)
       };
     },
 
@@ -1126,6 +1185,14 @@ function renderDraftReviewWorkspace(
       onChange();
     });
 
+    const acceptanceCriteriaPanel = renderAcceptanceCriteriaPanel(
+      project,
+      draft,
+      currentUser,
+      aiGenerationService,
+      onChange,
+      error
+    );
     const traceabilityPanel = renderTraceabilityPanel(
       project,
       draft,
@@ -1136,7 +1203,7 @@ function renderDraftReviewWorkspace(
       error
     );
     const overlay = renderDraftOverlay(draft, aiGenerationService.listAssignableOwners());
-    editor.append(header, form, traceabilityPanel, overlay);
+    editor.append(header, form, acceptanceCriteriaPanel, traceabilityPanel, overlay);
   }
 
   renderNavigation();
@@ -1302,6 +1369,102 @@ function renderTraceabilityPanel(
       return;
     }
 
+    onChange();
+  });
+
+  panel.append(form);
+  return panel;
+}
+
+function renderAcceptanceCriteriaPanel(
+  project,
+  draft,
+  currentUser,
+  aiGenerationService,
+  onChange,
+  sharedError
+) {
+  const panel = document.createElement("section");
+  panel.className = "acceptance-criteria-panel";
+  panel.setAttribute("aria-label", "Acceptance criteria");
+
+  const heading = document.createElement("h4");
+  heading.textContent = "Acceptance Criteria";
+  panel.append(heading);
+
+  if (draft.type !== DECISION_OBJECT_TYPES.REQUIREMENT) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state neutral";
+    empty.textContent = "Acceptance criteria are authored from requirements.";
+    panel.append(empty);
+    return panel;
+  }
+
+  const criteria = aiGenerationService.listAcceptanceCriteria(project.projectId, draft.objectId);
+
+  if (criteria.length === 0) {
+    const missing = document.createElement("p");
+    missing.className = "trace-missing acceptance-missing";
+    missing.textContent = "Missing acceptance criteria/test link.";
+    panel.append(missing);
+  } else {
+    const list = document.createElement("ul");
+    list.className = "acceptance-criteria-list";
+
+    for (const item of criteria) {
+      const row = document.createElement("li");
+      const label = document.createElement("strong");
+      label.textContent = `${item.title} | v${item.currentVersion}`;
+      const details = document.createElement("span");
+      details.textContent = item.criteria.join(" ");
+      row.append(label, details);
+      list.append(row);
+    }
+
+    panel.append(list);
+  }
+
+  if (!currentUser.canEditProject) {
+    return panel;
+  }
+
+  const form = document.createElement("form");
+  form.className = "acceptance-criteria-form";
+
+  const titleField = createInput("Test title", "title");
+  const criteriaField = document.createElement("label");
+  criteriaField.textContent = "Criteria";
+  const criteriaArea = document.createElement("textarea");
+  criteriaArea.name = "criteria";
+  criteriaArea.rows = 3;
+  criteriaArea.required = true;
+  criteriaField.append(criteriaArea);
+
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "secondary-action";
+  submit.textContent = "Add Criteria";
+
+  form.append(titleField, criteriaField, submit);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    const result = aiGenerationService.createAcceptanceCriteria(
+      project.projectId,
+      draft.objectId,
+      {
+        title: String(formData.get("title") ?? ""),
+        criteria: String(formData.get("criteria") ?? "")
+      },
+      currentUser.actor
+    );
+
+    if (!result.ok) {
+      sharedError.textContent = result.error;
+      return;
+    }
+
+    form.reset();
     onChange();
   });
 

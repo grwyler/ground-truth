@@ -210,6 +210,19 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
       };
     },
 
+    createAcceptanceCriteria(decisionObject, version, traceLink, auditEvents = []) {
+      state.decisionObjects.push(cloneRecord(decisionObject));
+      state.decisionObjectVersions.push(cloneRecord(version));
+      state.traceLinks.push(cloneRecord(traceLink));
+      state.auditEvents.push(...auditEvents.map(cloneRecord));
+
+      return {
+        decisionObject: cloneRecord(decisionObject),
+        version: cloneRecord(version),
+        traceLink: cloneRecord(traceLink)
+      };
+    },
+
     updateDecisionObject(decisionObject, version, auditEvent) {
       const decisionObjectIndex = state.decisionObjects.findIndex(
         (candidate) => candidate.object_id === decisionObject.object_id

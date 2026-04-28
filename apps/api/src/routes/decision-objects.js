@@ -1,8 +1,10 @@
 import {
   DRAFT_REVIEW_STATUSES,
   PERMISSIONS,
+  TRACE_RELATIONSHIP_TYPES,
   acceptDecisionDraft,
   authorize,
+  buildAcceptanceCriteriaCreate,
   buildDecisionObjectAuditEvent,
   buildDecisionObjectCreate,
   buildDecisionObjectUpdate,
@@ -12,6 +14,7 @@ import {
   buildTraceLinkCreate,
   isRejectedDecisionDraft,
   rejectDecisionDraft,
+  toAcceptanceCriteriaSummary,
   toAssignableOwnerSummary,
   toDecisionObjectSummary,
   toDecisionObjectVersionSummary,
@@ -242,6 +245,88 @@ export function createDecisionObjectsRoute({ projectRepository, now, idGenerator
         }
       }
 
+      if (pathParts.length >= 7 && pathParts[6] === "acceptance-criteria") {
+        if (request.method === "GET" && pathParts.length === 7) {
+          const authorization = authorize(session.actor, PERMISSIONS.READ_PROJECT);
+
+          if (!authorization.allowed) {
+            sendJson(response, 403, { error: "FORBIDDEN" });
+            return true;
+          }
+
+          sendJson(response, 200, {
+            acceptanceCriteria: listAcceptanceCriteriaSummaries(
+              projectRepository,
+              projectId,
+              objectId
+            )
+          });
+          return true;
+        }
+
+        if (request.method === "POST" && pathParts.length === 7) {
+          const authorization = authorize(session.actor, PERMISSIONS.EDIT_PROJECT);
+
+          if (!authorization.allowed) {
+            sendJson(response, 403, { error: "FORBIDDEN" });
+            return true;
+          }
+
+          const body = await readJsonBody(request);
+          const created = buildAcceptanceCriteriaCreate(
+            decisionObject,
+            body,
+            session.actor,
+            { idGenerator, now }
+          );
+
+          if (!created.ok) {
+            sendJson(response, 400, {
+              error: "VALIDATION_ERROR",
+              details: created.validation.errors
+            });
+            return true;
+          }
+
+          const objectAuditEvent = buildDecisionObjectAuditEvent(
+            created.decisionObject,
+            session.actor,
+            "created",
+            {
+              version_id: created.version.version_id,
+              requirement_object_id: decisionObject.object_id
+            },
+            { idGenerator, now }
+          );
+          const traceAuditEvent = buildTraceLinkAuditEvent(
+            created.traceLink,
+            session.actor,
+            "created",
+            { idGenerator, now }
+          );
+          const persisted = projectRepository.createAcceptanceCriteria(
+            created.decisionObject,
+            created.version,
+            created.traceLink,
+            [objectAuditEvent, traceAuditEvent]
+          );
+
+          sendJson(response, 201, {
+            acceptanceCriteria: toAcceptanceCriteriaSummary(
+              persisted.decisionObject,
+              persisted.version,
+              persisted.traceLink
+            ),
+            traceLink: toTraceLinkSummary(
+              persisted.traceLink,
+              decisionObject,
+              persisted.decisionObject
+            )
+          });
+          return true;
+        }
+      }
+
       if (request.method === "GET" && pathParts.length === 7 && pathParts[6] === "versions") {
         const authorization = authorize(session.actor, PERMISSIONS.READ_PROJECT);
 
@@ -456,4 +541,30 @@ function listTraceLinkSummaries(projectRepository, projectId, objectId) {
       projectRepository.findDecisionObject(projectId, traceLink.target_object_id)
     )
   );
+}
+
+function listAcceptanceCriteriaSummaries(projectRepository, projectId, requirementObjectId) {
+  return (projectRepository.listTraceLinks?.(projectId, requirementObjectId) ?? [])
+    .filter(
+      (traceLink) =>
+        traceLink.source_object_id === requirementObjectId &&
+        traceLink.relationship_type === TRACE_RELATIONSHIP_TYPES.VALIDATED_BY
+    )
+    .map((traceLink) => {
+      const testObject = projectRepository.findDecisionObject(
+        projectId,
+        traceLink.target_object_id
+      );
+      const version = testObject
+        ? projectRepository.findDecisionObjectVersion(
+            testObject.object_id,
+            testObject.current_version
+          )
+        : null;
+
+      return testObject && version
+        ? toAcceptanceCriteriaSummary(testObject, version, traceLink)
+        : null;
+    })
+    .filter(Boolean);
 }

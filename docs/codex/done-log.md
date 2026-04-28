@@ -1,5 +1,14 @@
 # Done Log
 
+## 2026-04-28 - MVP-011
+
+- Added acceptance criteria domain helpers that create versioned Test decision objects and mandatory `validated_by` trace links from requirement objects.
+- Added `GET` and `POST` support under `/api/v1/projects/{projectId}/decision-objects/{objectId}/acceptance-criteria`.
+- Extended the in-memory repository with atomic acceptance criteria persistence for the Test object, version, trace link, and audit events.
+- Added a requirement detail acceptance criteria panel in the browser-local workspace with missing-test visibility and direct criteria creation.
+- Added unit/API/local workspace coverage for Test object creation, automatic trace link creation, empty criteria rejection, unauthorized writes, versioned criteria edits, and missing-test prompt resolution.
+- Verified with `npm test`, `npm run lint`, `npm run typecheck`, and `npm run build`.
+
 ## 2026-04-28 - MVP-010
 
 - Added traceability domain helpers for MVP relationship validation, mandatory readiness-link detection, trace link summaries, and create/delete audit event details.

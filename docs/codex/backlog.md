@@ -524,6 +524,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-011
 
+**Status:** Complete.
+
 **Title:** Implement acceptance criteria/test authoring
 
 **Goal:** Let users create acceptance criteria as Test decision objects and link them to requirements.
