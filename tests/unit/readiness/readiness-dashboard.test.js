@@ -118,3 +118,58 @@ test("local readiness dashboard opens the gate when links and approvals are comp
   assert.equal(dashboard.pendingApprovalCount, 0);
   assert.equal(dashboard.jiraExportDisabled, false);
 });
+
+test("local readiness dashboard opens permitted path after PM override", () => {
+  const projectService = createLocalProjectService([
+    {
+      projectId: "project-dashboard-override",
+      name: "Dashboard Override Project",
+      description: null,
+      customer: null,
+      contractNumber: null,
+      programName: null,
+      status: "draft",
+      readinessStatus: "not_ready",
+      readinessScore: 0,
+      createdBy: programManager.id,
+      createdAt: "2026-04-28T12:00:00.000Z",
+      updatedAt: "2026-04-28T12:00:00.000Z"
+    }
+  ]);
+  const service = createLocalAiGenerationService(projectService);
+  const requirement = service.createDecisionObject(
+    "project-dashboard-override",
+    {
+      type: DECISION_OBJECT_TYPES.REQUIREMENT,
+      title: "Overridden requirement",
+      content: { requirement: "The system shall support visible overrides." },
+      ownerId: engineeringLead.id
+    },
+    programManager
+  );
+  service.submitApproval(
+    "project-dashboard-override",
+    requirement.decisionObject.objectId,
+    { version: 1, approvalDecision: "approved", comment: "Requirement approved." },
+    customerPm
+  );
+  const beforeOverride = service.getReadinessDashboard("project-dashboard-override");
+  const result = service.submitOverride(
+    "project-dashboard-override",
+    {
+      blockerIds: beforeOverride.hardBlockers.map((blocker) => blocker.blockerId),
+      reason: "Proceed with explicit PM risk acceptance.",
+      riskAcknowledgment: "Missing traceability risk remains visible on the dashboard."
+    },
+    programManager
+  );
+  const afterOverride = service.getReadinessDashboard("project-dashboard-override");
+
+  assert.equal(result.ok, true);
+  assert.equal(afterOverride.status, READINESS_STATUSES.READY);
+  assert.equal(afterOverride.hardBlockers.length, 0);
+  assert.equal(afterOverride.overrideCount, 1);
+  assert.equal(afterOverride.resolvedBlockers.length, beforeOverride.hardBlockers.length);
+  assert.equal(afterOverride.jiraExportDisabled, false);
+  assert.equal(service.listAuditEvents().at(-1).event_type, "override");
+});

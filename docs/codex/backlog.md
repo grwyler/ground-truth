@@ -792,6 +792,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-016
 
+**Status:** Complete.
+
 **Title:** Implement override and risk acceptance workflow
 
 **Goal:** Allow authorized PM-level users to explicitly accept risk for specific blockers without hiding the risk.

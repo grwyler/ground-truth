@@ -10,6 +10,7 @@ import { createAiRoute } from "./routes/ai.js";
 import { createApprovalsRoute } from "./routes/approvals.js";
 import { createDecisionObjectsRoute } from "./routes/decision-objects.js";
 import { createDocumentsRoute } from "./routes/documents.js";
+import { createOverridesRoute } from "./routes/overrides.js";
 import { createProjectsRoute, sendJson } from "./routes/projects.js";
 import { createReadinessRoute } from "./routes/readiness.js";
 
@@ -24,6 +25,7 @@ export function createApiServer({
   const handleAiRoute = createAiRoute({ projectRepository, aiDraftAdapter });
   const handleApprovalsRoute = createApprovalsRoute({ projectRepository });
   const handleDecisionObjectsRoute = createDecisionObjectsRoute({ projectRepository });
+  const handleOverridesRoute = createOverridesRoute({ projectRepository });
   const handleProjectsRoute = createProjectsRoute({ projectRepository });
   const handleReadinessRoute = createReadinessRoute({ projectRepository });
   const handleDocumentsRoute = createDocumentsRoute({ projectRepository, storageAdapter });
@@ -46,6 +48,10 @@ export function createApiServer({
     }
 
     if (await handleReadinessRoute(request, response)) {
+      return;
+    }
+
+    if (await handleOverridesRoute(request, response)) {
       return;
     }
 

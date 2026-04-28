@@ -1,5 +1,14 @@
 # Done Log
 
+## 2026-04-28 - MVP-016
+
+- Added override domain helpers for PM-authorized risk acceptance, blocker validation, immutable override records, blocker status updates, override summaries, and audit event creation.
+- Added `POST /api/v1/projects/{projectId}/overrides` with authorization, required reason/risk acknowledgment validation, linked blocker checks, override persistence, readiness recomputation, and audit logging.
+- Extended the in-memory repository with override persistence and blocker status updates.
+- Added a browser-local override/risk acceptance panel on the readiness dashboard with blocker selection, reason, risk acknowledgment, authority confirmation, and visible post-submit readiness updates.
+- Added unit, API, and local dashboard coverage for successful PM override, missing reason/risk acknowledgment, unauthorized users, audit records, and readiness gate behavior after accepted risk.
+- Verified with `npm test -- --test-name-pattern=override`, `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+
 ## 2026-04-28 - MVP-015
 
 - Added a browser-local readiness dashboard model that reuses the MVP readiness engine and returns computed gate state, blocker ownership, pending approval count, open risk count, override count, score breakdown, and Jira export gating.

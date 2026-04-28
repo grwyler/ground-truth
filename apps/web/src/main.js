@@ -20,6 +20,8 @@ import {
   buildVersionDiff,
   buildOwnerAssignment,
   buildDocumentRecord,
+  buildOverrideAuditEvent,
+  buildOverrideRecord,
   buildQueuedAiGenerationJob,
   buildTraceLinkCreate,
   evaluateProjectReadiness,
@@ -40,6 +42,7 @@ import {
   toApprovalSummary,
   toDecisionObjectSummary,
   toDocumentSummary,
+  toOverrideSummary,
   toProjectSummary,
   toReadinessResponse,
   toTraceLinkSummary
@@ -765,6 +768,67 @@ export function createLocalAiGenerationService(
       };
     },
 
+    submitOverride(projectId, input, actor) {
+      const project = projectService
+        .listProjects()
+        .find((candidate) => candidate.projectId === projectId);
+
+      if (!project) {
+        return { ok: false, error: "Project was not found." };
+      }
+
+      const projectDecisionObjects = decisionObjects.filter(
+        (decisionObject) => decisionObject.project_id === projectId
+      );
+      const projectDecisionObjectIds = new Set(
+        projectDecisionObjects.map((decisionObject) => decisionObject.object_id)
+      );
+      const readiness = evaluateProjectReadiness(toProjectRecord(project), {
+        decisionObjects: projectDecisionObjects,
+        decisionObjectVersions: decisionObjectVersions.filter((version) =>
+          projectDecisionObjectIds.has(version.object_id)
+        ),
+        traceLinks: traceLinks.filter((traceLink) => traceLink.project_id === projectId),
+        approvals: approvals.filter((approval) => projectDecisionObjectIds.has(approval.object_id)),
+        overrides: overrides.filter((override) => override.project_id === projectId)
+      });
+      const result = buildOverrideRecord(
+        toProjectRecord(project),
+        readiness.blockers,
+        input,
+        actor,
+        {
+          idGenerator: (kind) => {
+            draftIdSequence += 1;
+            return `local-${kind}-${draftIdSequence}`;
+          }
+        }
+      );
+
+      if (!result.ok) {
+        return {
+          ok: false,
+          error: "Select open blockers and provide both a reason and risk acknowledgment."
+        };
+      }
+
+      overrides.push(result.override);
+      auditEvents.push(
+        buildOverrideAuditEvent(result.override, actor, {
+          idGenerator: (kind) => {
+            draftIdSequence += 1;
+            return `local-${kind}-${draftIdSequence}`;
+          }
+        })
+      );
+
+      return {
+        ok: true,
+        override: toOverrideSummary(result.override),
+        readiness: getReadinessDashboard(projectId)
+      };
+    },
+
     async generateDraft(projectId, actor) {
       const project = projectService
         .listProjects()
@@ -970,16 +1034,31 @@ function renderProjectWorkspace(
       selectedObjectId
     );
   });
-  const readinessDashboard = renderReadinessDashboard(project, currentUser, aiGenerationService, (objectId) => {
-    renderProjectWorkspace(
-      container,
-      project,
-      currentUser,
-      documentService,
-      aiGenerationService,
-      objectId
-    );
-  });
+  const readinessDashboard = renderReadinessDashboard(
+    project,
+    currentUser,
+    aiGenerationService,
+    (objectId) => {
+      renderProjectWorkspace(
+        container,
+        project,
+        currentUser,
+        documentService,
+        aiGenerationService,
+        objectId
+      );
+    },
+    () => {
+      renderProjectWorkspace(
+        container,
+        project,
+        currentUser,
+        documentService,
+        aiGenerationService,
+        selectedObjectId
+      );
+    }
+  );
   const aiPanel = renderAiGenerationPanel(
     project,
     currentUser,
@@ -1188,7 +1267,13 @@ function renderAiGenerationPanel(
   return panel;
 }
 
-function renderReadinessDashboard(project, currentUser, aiGenerationService, onOpenObject) {
+function renderReadinessDashboard(
+  project,
+  currentUser,
+  aiGenerationService,
+  onOpenObject,
+  onChange
+) {
   const dashboard = aiGenerationService.getReadinessDashboard(project.projectId);
   const panel = document.createElement("section");
   panel.className = "readiness-dashboard";
@@ -1313,6 +1398,12 @@ function renderReadinessDashboard(project, currentUser, aiGenerationService, onO
     overrideSection.append(overrideList);
   }
 
+  if (currentUser.canSubmitOverride && dashboard.hardBlockers.length > 0) {
+    overrideSection.append(
+      renderOverrideForm(project, dashboard.hardBlockers, currentUser, aiGenerationService, onChange)
+    );
+  }
+
   const exportSection = document.createElement("section");
   exportSection.className = "dashboard-section export-gate";
   const exportHeading = document.createElement("h4");
@@ -1332,6 +1423,98 @@ function renderReadinessDashboard(project, currentUser, aiGenerationService, onO
 
   panel.append(header, breakdown, stats, blockerSection, overrideSection, exportSection);
   return panel;
+}
+
+function renderOverrideForm(project, blockers, currentUser, aiGenerationService, onChange) {
+  const form = document.createElement("form");
+  form.className = "override-form";
+
+  const heading = document.createElement("h5");
+  heading.textContent = "Risk Acceptance";
+
+  const blockerGroup = document.createElement("fieldset");
+  const blockerLegend = document.createElement("legend");
+  blockerLegend.textContent = "Blockers";
+  blockerGroup.append(blockerLegend);
+  for (const blocker of blockers) {
+    const label = document.createElement("label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.name = "blockerIds";
+    checkbox.value = blocker.blockerId;
+    checkbox.checked = true;
+    const text = document.createElement("span");
+    text.textContent = blocker.description;
+    label.append(checkbox, text);
+    blockerGroup.append(label);
+  }
+
+  const reasonField = document.createElement("label");
+  reasonField.textContent = "Reason";
+  const reason = document.createElement("textarea");
+  reason.name = "reason";
+  reason.required = true;
+  reason.rows = 3;
+  reasonField.append(reason);
+
+  const riskField = document.createElement("label");
+  riskField.textContent = "Risk acknowledgment";
+  const riskAcknowledgment = document.createElement("textarea");
+  riskAcknowledgment.name = "riskAcknowledgment";
+  riskAcknowledgment.required = true;
+  riskAcknowledgment.rows = 3;
+  riskField.append(riskAcknowledgment);
+
+  const authorityField = document.createElement("label");
+  authorityField.className = "checkbox-field";
+  const authority = document.createElement("input");
+  authority.type = "checkbox";
+  authority.name = "authorityConfirmed";
+  authority.required = true;
+  const authorityText = document.createElement("span");
+  authorityText.textContent = `I am submitting as ${currentUser.actor.roleLabel}.`;
+  authorityField.append(authority, authorityText);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "secondary-action";
+  submit.textContent = "Submit Override";
+
+  form.append(heading, blockerGroup, reasonField, riskField, authorityField, error, submit);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    const blockerIds = formData.getAll("blockerIds").map(String);
+
+    if (!formData.get("authorityConfirmed")) {
+      error.textContent = "Confirm override authority before submitting.";
+      return;
+    }
+
+    const result = aiGenerationService.submitOverride(
+      project.projectId,
+      {
+        blockerIds,
+        reason: String(formData.get("reason") ?? ""),
+        riskAcknowledgment: String(formData.get("riskAcknowledgment") ?? "")
+      },
+      currentUser.actor
+    );
+
+    if (!result.ok) {
+      error.textContent = result.error;
+      return;
+    }
+
+    form.reset();
+    onChange?.();
+  });
+
+  return form;
 }
 
 function renderBlockerItem(blocker, onOpenObject) {

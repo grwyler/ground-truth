@@ -9,6 +9,7 @@ import {
   READINESS_STATUSES,
   TRACE_RELATIONSHIP_TYPES
 } from "./models/index.js";
+import { toOverrideSummary } from "./overrides.js";
 
 export const READINESS_RULE_SET_VERSION = "mvp-readiness-v1";
 
@@ -312,20 +313,6 @@ function buildReadinessSummary(status, openBlockerCount) {
   return `Project is Not Ready because ${openBlockerCount} unresolved hard blocker${
     openBlockerCount === 1 ? "" : "s"
   } remain.`;
-}
-
-function toOverrideSummary(override) {
-  return Object.freeze({
-    overrideId: override.override_id,
-    projectId: override.project_id,
-    blockerIds: Object.freeze([...(override.blocker_ids ?? [])]),
-    authorizedBy: override.authorized_by,
-    authorityRole: override.authority_role,
-    reason: override.reason,
-    riskAcknowledgment: override.risk_acknowledgment,
-    createdAt: override.created_at,
-    visibility: override.visibility
-  });
 }
 
 function buildStableBlockerId(projectId, objectId, ruleId) {

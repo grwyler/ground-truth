@@ -156,6 +156,29 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
         .map(cloneRecord);
     },
 
+    createOverride(override, overriddenBlockers = [], auditEvent) {
+      state.overrides.push(cloneRecord(override));
+
+      for (const overriddenBlocker of overriddenBlockers) {
+        const blockerIndex = state.blockers.findIndex(
+          (candidate) => candidate.blocker_id === overriddenBlocker.blocker_id
+        );
+
+        if (blockerIndex !== -1) {
+          state.blockers[blockerIndex] = cloneRecord(overriddenBlocker);
+        }
+      }
+
+      if (auditEvent) {
+        state.auditEvents.push(cloneRecord(auditEvent));
+      }
+
+      return {
+        override: cloneRecord(override),
+        overriddenBlockers: overriddenBlockers.map(cloneRecord)
+      };
+    },
+
     saveReadinessEvaluation(evaluation, blockers, auditEvent) {
       state.readinessEvaluations.push(cloneRecord(evaluation));
 

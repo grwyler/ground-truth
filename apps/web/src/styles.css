@@ -321,6 +321,59 @@ h2 {
   padding: 12px;
 }
 
+.override-form {
+  border-top: 1px solid #e3ad77;
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 12px;
+}
+
+.override-form h5 {
+  font-size: 0.92rem;
+  margin: 0;
+}
+
+.override-form fieldset,
+.override-form label {
+  border: 0;
+  color: #3d4756;
+  display: grid;
+  font-size: 0.86rem;
+  font-weight: 700;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+}
+
+.override-form legend {
+  color: #3d4756;
+  font-size: 0.86rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.override-form fieldset label,
+.override-form .checkbox-field {
+  align-items: start;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.override-form input[type="checkbox"] {
+  margin-top: 3px;
+}
+
+.override-form textarea {
+  border: 1px solid #cdd6e3;
+  border-radius: 6px;
+  color: #17202a;
+  font: inherit;
+  line-height: 1.45;
+  padding: 9px 10px;
+  resize: vertical;
+  width: 100%;
+}
+
 .export-gate {
   border: 1px solid #d8dee8;
   border-radius: 6px;

@@ -23,6 +23,7 @@ export * from "./decision-objects.js";
 export * from "./documents.js";
 export * from "./models/index.js";
 export * from "./ownership.js";
+export * from "./overrides.js";
 export * from "./projects.js";
 export * from "./readiness.js";
 export * from "./roles.js";
