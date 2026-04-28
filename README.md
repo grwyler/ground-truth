@@ -20,6 +20,14 @@ Install dependencies:
 npm install
 ```
 
+Start the MVP locally:
+
+```bash
+npm run dev
+```
+
+The unified dev server runs the API and web UI on `http://localhost:4000`.
+
 Run the quality gates:
 
 ```bash
@@ -36,7 +44,7 @@ Reset and write deterministic MVP seed data:
 npm run db:seed
 ```
 
-Run the placeholder API:
+Run the API only, if you need to exercise backend routes without the UI:
 
 ```bash
 npm run dev:api
@@ -44,13 +52,13 @@ npm run dev:api
 
 The API listens on `API_PORT` or `4000` and exposes `GET /health`.
 
-Run the placeholder web shell:
+Run the browser-local web module directly for unit-style shell checks:
 
 ```bash
 npm run dev:web
 ```
 
-The web script renders a static shell when loaded in a browser and prints a local file hint when run from Node.
+The web script prints a local hint when run from Node. For actual preview, use `npm run dev`.
 
 Run the MVP pilot smoke flow:
 
@@ -63,13 +71,12 @@ The smoke flow resets deterministic seed data, runs the Ready-to-Build happy pat
 ## Running the MVP Locally
 
 1. Install dependencies with `npm install`.
-2. Reset deterministic seed data with `npm run db:seed`.
-3. Start the API in one terminal with `npm run dev:api`.
-4. Start the web shell in another terminal with `npm run dev:web`.
-5. Open `apps/web/index.html` in a browser for the static MVP UI shell.
-6. Use `x-user-id` request headers such as `user-pm-001`, `user-eng-001`, `user-operator-001`, `user-customer-pm-001`, or `user-exec-viewer-001` when exercising API routes locally.
+2. Start the app with `npm run dev`.
+3. Open `http://localhost:4000` for the UI.
+4. Open `http://localhost:4000/health` to verify the API.
+5. Use `x-user-id` request headers such as `user-pm-001`, `user-eng-001`, `user-operator-001`, `user-customer-pm-001`, or `user-exec-viewer-001` when exercising API routes locally.
 
-The API listens on `API_PORT` or `4000`; `GET /health` confirms that it is running. The repeatable pilot flow is documented in `docs/codex/mvp-demo-flow.md`.
+The unified dev server serves browser modules from `apps/web/src` and shared package modules from `packages`, so no `file://` paths or repo-root static serving are required. The repeatable pilot flow is documented in `docs/codex/mvp-demo-flow.md`.
 
 ## Environment
 

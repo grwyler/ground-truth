@@ -1,4 +1,6 @@
 import { createServer } from "node:http";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   createInMemoryProjectRepository,
   createPersistenceConfig
@@ -113,11 +115,39 @@ export function createApiServer({
   });
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replaceAll("\\", "/")}`) {
-  const port = Number.parseInt(process.env.API_PORT ?? "4000", 10);
-  const server = createApiServer();
+export function startApiHttpServer({
+  port = Number.parseInt(process.env.API_PORT ?? "4000", 10),
+  onListening,
+  ...serverOptions
+} = {}) {
+  const server = createApiServer(serverOptions);
+  const started = new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, () => {
+      server.off("error", reject);
+      onListening?.(server);
+      resolve(server);
+    });
+  });
 
-  server.listen(port, () => {
-    console.log(`Ground Truth API scaffold listening on http://localhost:${port}`);
+  return Object.freeze({ server, started });
+}
+
+function isMainModule() {
+  return Boolean(process.argv[1]) && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+}
+
+if (isMainModule()) {
+  const port = Number.parseInt(process.env.API_PORT ?? "4000", 10);
+  const { started } = startApiHttpServer({
+    port,
+    onListening() {
+      console.log(`Ground Truth API scaffold listening on http://localhost:${port}`);
+    }
+  });
+
+  started.catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
   });
 }

@@ -5,6 +5,7 @@
   "type": "module",
   "description": "MVP scaffold for the Pre-Development Readiness Platform.",
   "scripts": {
+    "dev": "node scripts/dev.mjs",
     "dev:web": "node apps/web/src/main.js",
     "dev:api": "node apps/api/src/server.js",
     "db:seed": "node scripts/reset-seed.mjs",
