@@ -11,6 +11,7 @@ import { createApprovalsRoute } from "./routes/approvals.js";
 import { createDecisionObjectsRoute } from "./routes/decision-objects.js";
 import { createDocumentsRoute } from "./routes/documents.js";
 import { createProjectsRoute, sendJson } from "./routes/projects.js";
+import { createReadinessRoute } from "./routes/readiness.js";
 
 export function createApiServer({
   metadata = getApplicationMetadata(),
@@ -24,6 +25,7 @@ export function createApiServer({
   const handleApprovalsRoute = createApprovalsRoute({ projectRepository });
   const handleDecisionObjectsRoute = createDecisionObjectsRoute({ projectRepository });
   const handleProjectsRoute = createProjectsRoute({ projectRepository });
+  const handleReadinessRoute = createReadinessRoute({ projectRepository });
   const handleDocumentsRoute = createDocumentsRoute({ projectRepository, storageAdapter });
 
   return createServer(async (request, response) => {
@@ -40,6 +42,10 @@ export function createApiServer({
     }
 
     if (await handleApprovalsRoute(request, response)) {
+      return;
+    }
+
+    if (await handleReadinessRoute(request, response)) {
       return;
     }
 

@@ -1,5 +1,13 @@
 # Done Log
 
+## 2026-04-28 - MVP-014
+
+- Added a centralized MVP readiness engine with deterministic hard-blocker rules, rule-set versioning, readiness score calculation, override-aware blocker handling, and response summaries.
+- Added `GET /api/v1/projects/{projectId}/readiness` with project read authorization, persisted readiness evaluations, generated blocker records, project readiness status updates, and audit events.
+- Extended the in-memory repository with readiness evaluation, blocker, and override read/write behavior.
+- Added unit and API coverage for missing workflow links, missing acceptance criteria/test links, missing current-version approvals, Ready and Not Ready states, override behavior, authorization, and seeded-data performance under the 2-second target.
+- Verified with `npm test -- --test-name-pattern=readiness`, `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+
 ## 2026-04-28 - MVP-013
 
 - Added versioning domain helpers for active approval invalidation, invalidation audit events, and field-level content diffs between immutable decision object versions.

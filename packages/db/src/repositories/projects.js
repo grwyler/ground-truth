@@ -10,6 +10,9 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
     decisionObjectVersions: (seedData.decisionObjectVersions ?? []).map(cloneRecord),
     traceLinks: (seedData.traceLinks ?? []).map(cloneRecord),
     approvals: (seedData.approvals ?? []).map(cloneRecord),
+    readinessEvaluations: (seedData.readinessEvaluations ?? []).map(cloneRecord),
+    blockers: (seedData.blockers ?? []).map(cloneRecord),
+    overrides: (seedData.overrides ?? []).map(cloneRecord),
     users: (seedData.users ?? defaultSeedData.users).map(cloneRecord),
     roleAssignments: (seedData.roleAssignments ?? defaultSeedData.roleAssignments).map(cloneRecord),
     auditEvents: (seedData.auditEvents ?? []).map(cloneRecord)
@@ -133,6 +136,60 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
       return state.approvals
         .filter((approval) => projectObjectIds.has(approval.object_id))
         .map(cloneRecord);
+    },
+
+    listReadinessEvaluations(projectId) {
+      return state.readinessEvaluations
+        .filter((evaluation) => evaluation.project_id === projectId)
+        .map(cloneRecord);
+    },
+
+    listProjectBlockers(projectId) {
+      return state.blockers
+        .filter((blocker) => blocker.project_id === projectId)
+        .map(cloneRecord);
+    },
+
+    listProjectOverrides(projectId) {
+      return state.overrides
+        .filter((override) => override.project_id === projectId)
+        .map(cloneRecord);
+    },
+
+    saveReadinessEvaluation(evaluation, blockers, auditEvent) {
+      state.readinessEvaluations.push(cloneRecord(evaluation));
+
+      const generatedBlockerIds = new Set(blockers.map((blocker) => blocker.blocker_id));
+      const generatedBlockerPrefix = `blocker-${sanitizeIdentifier(evaluation.project_id)}-`;
+      state.blockers = state.blockers.filter(
+        (blocker) =>
+          blocker.project_id !== evaluation.project_id ||
+          (!generatedBlockerIds.has(blocker.blocker_id) &&
+            !blocker.blocker_id.startsWith(generatedBlockerPrefix))
+      );
+      state.blockers.push(...blockers.map(cloneRecord));
+
+      const projectIndex = state.projects.findIndex(
+        (candidate) => candidate.project_id === evaluation.project_id
+      );
+
+      if (projectIndex !== -1) {
+        state.projects[projectIndex] = {
+          ...state.projects[projectIndex],
+          readiness_status: evaluation.status,
+          readiness_score: evaluation.readiness_score,
+          updated_at: evaluation.evaluated_at
+        };
+      }
+
+      if (auditEvent) {
+        state.auditEvents.push(cloneRecord(auditEvent));
+      }
+
+      return {
+        evaluation: cloneRecord(evaluation),
+        blockers: blockers.map(cloneRecord)
+      };
     },
 
     createApproval(approval, decisionObject, auditEvent) {
@@ -367,4 +424,8 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
 
 function cloneRecord(record) {
   return structuredClone(record);
+}
+
+function sanitizeIdentifier(value) {
+  return `${value}`.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-|-$/g, "");
 }

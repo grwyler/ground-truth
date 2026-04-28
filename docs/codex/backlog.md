@@ -683,6 +683,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-014
 
+**Status:** Complete.
+
 **Title:** Implement readiness engine and blocker generation
 
 **Goal:** Compute Ready/Not Ready, readiness score, hard blockers, warnings, and override impact from structured project state.
