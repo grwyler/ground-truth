@@ -157,6 +157,81 @@ h2 {
   margin: 0;
 }
 
+.document-panel {
+  border-top: 1px solid #e2e7ef;
+  margin-top: 24px;
+  padding-top: 20px;
+}
+
+.panel-header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+h3 {
+  font-size: 1rem;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.secondary-action,
+.document-form button {
+  border: 1px solid #243244;
+  border-radius: 6px;
+  background: #243244;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 9px 12px;
+}
+
+.secondary-action:disabled {
+  border-color: #cdd6e3;
+  background: #eef2f6;
+  color: #596579;
+  cursor: not-allowed;
+}
+
+.document-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.document-form input {
+  border: 1px dashed #aab6c6;
+  border-radius: 6px;
+  color: #243244;
+  font: inherit;
+  padding: 12px;
+  width: 100%;
+}
+
+.document-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.document-list li {
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.document-list span {
+  color: #596579;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 .form-error,
 .empty-state {
   color: #9b1c31;

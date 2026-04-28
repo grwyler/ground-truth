@@ -1,5 +1,14 @@
 # Done Log
 
+## 2026-04-28 - MVP-005
+
+- Added document upload validation for PDF, DOCX, and TXT files with deterministic checksums and document upload audit events.
+- Added local filesystem storage behind a storage adapter and in-memory document inventory persistence.
+- Added `GET /api/v1/projects/{projectId}/documents` and `POST /api/v1/projects/{projectId}/documents` with PM-only upload authorization.
+- Added project workspace document inventory UI, multi-file upload controls, inline failures, and disabled AI draft generation until documents exist.
+- Added unit/API coverage for file type validation, checksum generation, multi-file upload, unsupported file rejection, unauthorized upload, persistent inventory, and local UI service behavior.
+- Verified with `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+
 ## 2026-04-28 - MVP-004
 
 - Added project intake domain validation and project creation helpers that initialize new projects as Draft and Not Ready.

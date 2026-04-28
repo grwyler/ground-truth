@@ -208,6 +208,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-005
 
+**Status:** Complete.
+
 **Title:** Implement document upload and document inventory
 
 **Goal:** Allow PMs to upload SOWs and supporting documents that become the source material for AI draft generation.

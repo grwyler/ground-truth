@@ -1,5 +1,10 @@
 import {
+  DOCUMENT_UPLOAD_STATUSES,
+  DOCUMENT_VALIDATION_ERRORS,
+  buildDocumentRecord,
+  isSupportedDocumentFileName,
   getApplicationMetadata,
+  toDocumentSummary,
   toProjectSummary
 } from "../../../packages/domain/src/index.js";
 import { createMvpSeedData } from "../../../packages/db/src/index.js";
@@ -9,7 +14,8 @@ export function renderAppShell(
   container,
   metadata = getApplicationMetadata(),
   currentUser = createLocalCurrentUser(),
-  projectService = createLocalProjectService()
+  projectService = createLocalProjectService(),
+  documentService = createLocalDocumentService()
 ) {
   if (!container) {
     throw new Error("A container element is required to render the app shell.");
@@ -70,9 +76,14 @@ export function renderAppShell(
   container.append(shell);
 
   renderProjectIntake(listRegion, projectService, currentUser, (project) => {
-    renderProjectWorkspace(workspace, project);
+    renderProjectWorkspace(workspace, project, currentUser, documentService);
   });
-  renderProjectWorkspace(workspace, projectService.listProjects()[0] ?? null);
+  renderProjectWorkspace(
+    workspace,
+    projectService.listProjects()[0] ?? null,
+    currentUser,
+    documentService
+  );
 
   return shell;
 }
@@ -104,6 +115,60 @@ export function createLocalProjectService(projects = createMvpSeedData().project
 
       projectState.unshift(project);
       return project;
+    }
+  });
+}
+
+export function createLocalDocumentService(
+  documents = createMvpSeedData().documents.map(toDocumentSummary)
+) {
+  const documentState = [...documents];
+
+  return Object.freeze({
+    listDocuments(projectId) {
+      return documentState.filter((document) => document.projectId === projectId);
+    },
+
+    uploadDocuments(projectId, files, actor) {
+      const uploaded = [];
+      const errors = [];
+
+      for (const file of Array.from(files)) {
+        if (!isSupportedDocumentFileName(file.name)) {
+          errors.push(`${file.name}: unsupported file type`);
+          continue;
+        }
+
+        if (file.size <= 0) {
+          errors.push(`${file.name}: empty files cannot be uploaded`);
+          continue;
+        }
+
+        const result = buildDocumentRecord(
+          {
+            projectId,
+            fileName: file.name,
+            storageUri: `local://browser/${projectId}/${file.name}`,
+            byteLength: file.size,
+            checksum: `sha256:browser-${documentState.length + uploaded.length + 1}`
+          },
+          actor,
+          {
+            idGenerator: () => `local-doc-${documentState.length + uploaded.length + 1}`
+          }
+        );
+
+        if (!result.ok) {
+          errors.push(...result.validation.errors.map(formatDocumentValidationError));
+          continue;
+        }
+
+        const document = toDocumentSummary(result.document);
+        documentState.push(document);
+        uploaded.push(document);
+      }
+
+      return { uploaded, errors };
     }
   });
 }
@@ -183,7 +248,7 @@ function renderProjectIntake(container, projectService, currentUser, onSelectPro
   container.append(list);
 }
 
-function renderProjectWorkspace(container, project) {
+function renderProjectWorkspace(container, project, currentUser, documentService) {
   container.innerHTML = "";
 
   if (!project) {
@@ -216,7 +281,11 @@ function renderProjectWorkspace(container, project) {
     meta.append(term, description);
   }
 
-  container.append(heading, meta);
+  const documentPanel = renderDocumentInventory(project, currentUser, documentService, () => {
+    renderProjectWorkspace(container, project, currentUser, documentService);
+  });
+
+  container.append(heading, meta, documentPanel);
 }
 
 function createInput(label, name, required = false) {
@@ -234,6 +303,103 @@ function formatStatus(status) {
     .split("_")
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(" ");
+}
+
+function renderDocumentInventory(project, currentUser, documentService, onChange) {
+  const panel = document.createElement("section");
+  panel.className = "document-panel";
+  panel.setAttribute("aria-label", "Document inventory");
+
+  const header = document.createElement("div");
+  header.className = "panel-header";
+
+  const heading = document.createElement("h3");
+  heading.textContent = "Documents";
+
+  const generateButton = document.createElement("button");
+  generateButton.type = "button";
+  generateButton.className = "secondary-action";
+  generateButton.textContent = "Generate AI Draft";
+
+  const documents = documentService.listDocuments(project.projectId);
+  generateButton.disabled = documents.length === 0;
+
+  header.append(heading, generateButton);
+  panel.append(header);
+
+  if (currentUser.canManageProject) {
+    const form = document.createElement("form");
+    form.className = "document-form";
+
+    const input = document.createElement("input");
+    input.type = "file";
+    input.name = "documents";
+    input.multiple = true;
+    input.accept = ".pdf,.docx,.txt";
+
+    const error = document.createElement("p");
+    error.className = "form-error";
+    error.setAttribute("role", "alert");
+
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.textContent = "Upload Documents";
+
+    form.append(input, error, submit);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const result = documentService.uploadDocuments(project.projectId, input.files, currentUser.actor);
+
+      if (result.errors.length > 0) {
+        error.textContent = result.errors.join(". ");
+      }
+
+      if (result.uploaded.length > 0) {
+        form.reset();
+        onChange();
+      }
+    });
+
+    panel.append(form);
+  }
+
+  if (documents.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "Upload at least one document before AI draft generation.";
+    panel.append(empty);
+    return panel;
+  }
+
+  const list = document.createElement("ul");
+  list.className = "document-list";
+
+  for (const documentRecord of documents) {
+    const item = document.createElement("li");
+    const name = document.createElement("strong");
+    name.textContent = documentRecord.fileName;
+    const meta = document.createElement("span");
+    meta.textContent = `${formatStatus(documentRecord.documentType)} | ${formatStatus(
+      documentRecord.uploadStatus ?? DOCUMENT_UPLOAD_STATUSES.UPLOADED
+    )}`;
+    item.append(name, meta);
+    list.append(item);
+  }
+
+  panel.append(list);
+  return panel;
+}
+
+function formatDocumentValidationError(error) {
+  if (error === DOCUMENT_VALIDATION_ERRORS.UNSUPPORTED_FILE_TYPE) {
+    return "Unsupported file type";
+  }
+
+  if (error === DOCUMENT_VALIDATION_ERRORS.FILE_CONTENT_REQUIRED) {
+    return "File content is required";
+  }
+
+  return "Document upload is invalid";
 }
 
 if (typeof document !== "undefined") {
