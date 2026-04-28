@@ -6,6 +6,7 @@ import {
   workspaceBoundaries
 } from "../../packages/domain/src/index.js";
 import { createPersistenceConfig } from "../../packages/db/src/index.js";
+import { SEEDED_MVP_USERS } from "../../packages/domain/src/index.js";
 
 test("application metadata is available to app boundaries", () => {
   assert.equal(getApplicationMetadata().name, "Ground Truth");
@@ -35,4 +36,8 @@ test("api server can be created for future route handlers", () => {
 
   assert.equal(typeof server.listen, "function");
   server.close();
+});
+
+test("domain exports seeded MVP users for local auth", () => {
+  assert.equal(SEEDED_MVP_USERS.length, 5);
 });

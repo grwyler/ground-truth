@@ -9,7 +9,7 @@
     "dev:api": "node apps/api/src/server.js",
     "lint": "node scripts/lint.mjs",
     "typecheck": "node scripts/typecheck.mjs",
-    "test": "node tests/unit/scaffold.test.js",
+    "test": "node scripts/test.mjs",
     "build": "node scripts/build.mjs"
   },
   "engines": {

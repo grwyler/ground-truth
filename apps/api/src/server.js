@@ -1,8 +1,13 @@
 import { createServer } from "node:http";
 import { getApplicationMetadata } from "../../../packages/domain/src/index.js";
+import { handleAuthRoute } from "./auth/routes.js";
 
 export function createApiServer({ metadata = getApplicationMetadata() } = {}) {
   return createServer((request, response) => {
+    if (handleAuthRoute(request, response)) {
+      return;
+    }
+
     if (request.method === "GET" && request.url === "/health") {
       const body = JSON.stringify({
         ok: true,

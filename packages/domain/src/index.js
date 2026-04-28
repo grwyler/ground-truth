@@ -14,3 +14,6 @@ export const workspaceBoundaries = Object.freeze([
   "packages/db",
   "tests"
 ]);
+
+export * from "./auth.js";
+export * from "./roles.js";

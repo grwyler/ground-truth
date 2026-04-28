@@ -61,6 +61,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-002
 
+**Status:** Complete.
+
 **Title:** Add authentication stub and MVP role model
 
 **Goal:** Provide enough identity and authorization structure to enforce PM, Engineering Lead, Operator Representative, Customer PM, and Executive Viewer behavior.

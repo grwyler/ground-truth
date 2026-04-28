@@ -52,3 +52,19 @@ h1 {
   font-size: 1rem;
   line-height: 1.5;
 }
+
+.role-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.role-actions span {
+  border: 1px solid #cdd6e3;
+  border-radius: 6px;
+  color: #243244;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 8px 10px;
+}

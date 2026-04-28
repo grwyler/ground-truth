@@ -1,6 +1,11 @@
 import { getApplicationMetadata } from "../../../packages/domain/src/index.js";
+import { createLocalCurrentUser } from "./lib/session/current-user.js";
 
-export function renderAppShell(container, metadata = getApplicationMetadata()) {
+export function renderAppShell(
+  container,
+  metadata = getApplicationMetadata(),
+  currentUser = createLocalCurrentUser()
+) {
   if (!container) {
     throw new Error("A container element is required to render the app shell.");
   }
@@ -19,9 +24,33 @@ export function renderAppShell(container, metadata = getApplicationMetadata()) {
 
   const summary = document.createElement("p");
   summary.className = "summary";
-  summary.textContent = "Readiness workspace scaffold";
+  summary.textContent = `Readiness workspace scaffold for ${currentUser.actor.roleLabel}`;
 
   shell.append(eyebrow, title, summary);
+
+  const nav = document.createElement("nav");
+  nav.setAttribute("aria-label", "Available actions");
+  nav.className = "role-actions";
+
+  const actions = [
+    ["Projects", currentUser.canReadProject],
+    ["Manage Project", currentUser.canManageProject],
+    ["Approve", currentUser.canApprove],
+    ["Override", currentUser.canSubmitOverride],
+    ["Jira Export", currentUser.canExportToJira]
+  ];
+
+  for (const [label, isVisible] of actions) {
+    if (!isVisible) {
+      continue;
+    }
+
+    const action = document.createElement("span");
+    action.textContent = label;
+    nav.append(action);
+  }
+
+  shell.append(nav);
   container.append(shell);
 
   return shell;

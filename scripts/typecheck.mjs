@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createApiServer } from "../apps/api/src/server.js";
 import { createPersistenceConfig } from "../packages/db/src/index.js";
 import {
+  SEEDED_MVP_USERS,
   getApplicationMetadata,
   workspaceBoundaries
 } from "../packages/domain/src/index.js";
@@ -12,6 +13,7 @@ assert.equal(typeof metadata.stage, "string");
 
 assert.ok(Array.isArray(workspaceBoundaries));
 assert.ok(workspaceBoundaries.every((boundary) => typeof boundary === "string"));
+assert.ok(SEEDED_MVP_USERS.every((user) => typeof user.id === "string"));
 
 const persistenceConfig = createPersistenceConfig({});
 assert.equal(typeof persistenceConfig.databaseUrl, "string");
