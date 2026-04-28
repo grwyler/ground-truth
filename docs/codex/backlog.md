@@ -10,6 +10,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-001
 
+**Status:** Complete.
+
 **Title:** Establish application scaffold and quality gates
 
 **Goal:** Create the minimal app structure, local developer workflow, and automated checks needed for subsequent tickets.
@@ -1016,4 +1018,3 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 - Pilot scenario is realistic enough for stakeholder walkthroughs.
 
 **Dependencies:** MVP-019.
-

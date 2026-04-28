@@ -1,0 +1,18 @@
+{
+  "name": "ground-truth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MVP scaffold for the Pre-Development Readiness Platform.",
+  "scripts": {
+    "dev:web": "node apps/web/src/main.js",
+    "dev:api": "node apps/api/src/server.js",
+    "lint": "node scripts/lint.mjs",
+    "typecheck": "node scripts/typecheck.mjs",
+    "test": "node tests/unit/scaffold.test.js",
+    "build": "node scripts/build.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
