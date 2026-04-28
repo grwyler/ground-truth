@@ -847,6 +847,8 @@ Source notes: `docs/OPERATOR_WORKLFOW.md` is currently empty, so operator workfl
 
 **Ticket ID:** MVP-017
 
+**Status:** Complete.
+
 **Title:** Implement certification package preview
 
 **Goal:** Generate a Ready-to-Build package snapshot that summarizes approved workflows, requirements, traceability, approvals, risks, blockers, and overrides.

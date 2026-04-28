@@ -13,6 +13,7 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
     readinessEvaluations: (seedData.readinessEvaluations ?? []).map(cloneRecord),
     blockers: (seedData.blockers ?? []).map(cloneRecord),
     overrides: (seedData.overrides ?? []).map(cloneRecord),
+    certificationPackages: (seedData.certificationPackages ?? []).map(cloneRecord),
     users: (seedData.users ?? defaultSeedData.users).map(cloneRecord),
     roleAssignments: (seedData.roleAssignments ?? defaultSeedData.roleAssignments).map(cloneRecord),
     auditEvents: (seedData.auditEvents ?? []).map(cloneRecord)
@@ -154,6 +155,22 @@ export function createInMemoryProjectRepository(seedData = createMvpSeedData()) 
       return state.overrides
         .filter((override) => override.project_id === projectId)
         .map(cloneRecord);
+    },
+
+    listProjectCertificationPackages(projectId) {
+      return state.certificationPackages
+        .filter((packageRecord) => packageRecord.project_id === projectId)
+        .map(cloneRecord);
+    },
+
+    createCertificationPackage(packageRecord, auditEvent) {
+      state.certificationPackages.push(cloneRecord(packageRecord));
+
+      if (auditEvent) {
+        state.auditEvents.push(cloneRecord(auditEvent));
+      }
+
+      return cloneRecord(packageRecord);
     },
 
     createOverride(override, overriddenBlockers = [], auditEvent) {

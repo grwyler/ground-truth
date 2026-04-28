@@ -1,5 +1,14 @@
 # Done Log
 
+## 2026-04-28 - MVP-017
+
+- Added certification package domain helpers for Ready-to-Build eligibility, package metadata, JSON preview assembly, version identifiers, traceability, approvals, risks, blockers, overrides, and audit event creation.
+- Added `POST /api/v1/projects/{projectId}/certification-package` with export-authorized generation, readiness gating, package metadata persistence, blocked-state details, and audit logging.
+- Extended the in-memory repository with certification package list/create behavior.
+- Added a browser-local certification package panel with included artifact checklist, blocked generation state, generated package metadata, and package preview wiring.
+- Added unit, API, and local dashboard coverage for blocked Not Ready generation, unauthorized users, generated package metadata, package content, traceability, approvals, risks, overrides, and audit records.
+- Verified with `npm test -- --test-name-pattern=certification`, `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+
 ## 2026-04-28 - MVP-016
 
 - Added override domain helpers for PM-authorized risk acceptance, blocker validation, immutable override records, blocker status updates, override summaries, and audit event creation.

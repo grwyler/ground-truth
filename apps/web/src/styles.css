@@ -185,6 +185,14 @@ h2 {
   padding-top: 20px;
 }
 
+.certification-panel {
+  border-top: 1px solid #e2e7ef;
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+}
+
 .readiness-hero {
   align-items: center;
   border: 1px solid #d8dee8;
@@ -378,6 +386,40 @@ h2 {
   border: 1px solid #d8dee8;
   border-radius: 6px;
   padding: 12px;
+}
+
+.package-checklist {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.package-checklist li,
+.package-preview {
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.package-preview {
+  display: grid;
+  gap: 5px;
+}
+
+.package-preview p {
+  color: #3d4756;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.package-preview span {
+  color: #596579;
+  font-size: 0.86rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .panel-header {
@@ -888,9 +930,10 @@ h4 {
   .draft-review-workspace,
   .draft-overlay,
   .blocker-item,
-  .dashboard-stats,
-  .score-breakdown,
-  .trace-link-form,
+    .dashboard-stats,
+    .score-breakdown,
+    .package-checklist,
+    .trace-link-form,
   .acceptance-criteria-form {
     grid-template-columns: 1fr;
   }

@@ -15,6 +15,8 @@ import {
   buildApprovalAuditEvent,
   buildApprovalDecision,
   buildAiGenerationAuditEvent,
+  buildCertificationPackage,
+  buildCertificationPackageAuditEvent,
   buildDecisionObjectCreate,
   buildDecisionObjectUpdate,
   buildVersionDiff,
@@ -40,6 +42,7 @@ import {
   toAcceptanceCriteriaSummary,
   toApprovalQueueItem,
   toApprovalSummary,
+  toCertificationPackageSummary,
   toDecisionObjectSummary,
   toDocumentSummary,
   toOverrideSummary,
@@ -228,6 +231,7 @@ export function createLocalAiGenerationService(
   const traceLinks = [...(seedData.traceLinks ?? [])];
   const approvals = [...(seedData.approvals ?? [])];
   const overrides = [...(seedData.overrides ?? [])];
+  const certificationPackages = [...(seedData.certificationPackages ?? [])];
   const auditEvents = [];
   let draftIdSequence = 0;
 
@@ -483,6 +487,25 @@ export function createLocalAiGenerationService(
     });
   }
 
+  function getCertificationInputs(projectId) {
+    const projectDecisionObjects = decisionObjects.filter(
+      (decisionObject) => decisionObject.project_id === projectId
+    );
+    const projectDecisionObjectIds = new Set(
+      projectDecisionObjects.map((decisionObject) => decisionObject.object_id)
+    );
+
+    return {
+      decisionObjects: projectDecisionObjects,
+      decisionObjectVersions: decisionObjectVersions.filter((version) =>
+        projectDecisionObjectIds.has(version.object_id)
+      ),
+      traceLinks: traceLinks.filter((traceLink) => traceLink.project_id === projectId),
+      approvals: approvals.filter((approval) => projectDecisionObjectIds.has(approval.object_id)),
+      overrides: overrides.filter((override) => override.project_id === projectId)
+    };
+  }
+
   return Object.freeze({
     listDecisionObjects,
 
@@ -497,6 +520,62 @@ export function createLocalAiGenerationService(
     listApprovalQueue,
 
     getReadinessDashboard,
+
+    listCertificationPackages(projectId) {
+      return certificationPackages
+        .filter((packageRecord) => packageRecord.project_id === projectId)
+        .map((packageRecord) => toCertificationPackageSummary(packageRecord));
+    },
+
+    generateCertificationPackage(projectId, input, actor) {
+      const project = projectService
+        .listProjects()
+        .find((candidate) => candidate.projectId === projectId);
+
+      if (!project) {
+        return { ok: false, error: "Project was not found." };
+      }
+
+      const packageInputs = getCertificationInputs(projectId);
+      const readinessResult = evaluateProjectReadiness(toProjectRecord(project), packageInputs);
+      const result = buildCertificationPackage(
+        toProjectRecord(project),
+        readinessResult,
+        packageInputs,
+        input,
+        actor,
+        {
+          idGenerator: (kind) => {
+            draftIdSequence += 1;
+            return `local-${kind}-${draftIdSequence}`;
+          }
+        }
+      );
+
+      if (!result.ok) {
+        return {
+          ok: false,
+          error: result.validation.errors.includes("PROJECT_NOT_READY")
+            ? "Certification package generation is blocked until Ready-to-Build or valid override state."
+            : "You do not have permission to generate the certification package."
+        };
+      }
+
+      certificationPackages.push(result.package);
+      auditEvents.push(
+        buildCertificationPackageAuditEvent(result.package, actor, {
+          idGenerator: (kind) => {
+            draftIdSequence += 1;
+            return `local-${kind}-${draftIdSequence}`;
+          }
+        })
+      );
+
+      return {
+        ok: true,
+        package: toCertificationPackageSummary(result.package, result.artifact)
+      };
+    },
 
     createDecisionObject(projectId, input, actor) {
       const created = buildDecisionObjectCreate(
@@ -1086,8 +1165,31 @@ function renderProjectWorkspace(
       selectedObjectId
     );
   });
+  const certificationPanel = renderCertificationPackagePanel(
+    project,
+    currentUser,
+    aiGenerationService,
+    () => {
+      renderProjectWorkspace(
+        container,
+        project,
+        currentUser,
+        documentService,
+        aiGenerationService,
+        selectedObjectId
+      );
+    }
+  );
 
-  container.append(heading, meta, readinessDashboard, documentPanel, aiPanel, approvalPanel);
+  container.append(
+    heading,
+    meta,
+    readinessDashboard,
+    certificationPanel,
+    documentPanel,
+    aiPanel,
+    approvalPanel
+  );
 }
 
 function createInput(label, name, required = false) {
@@ -1515,6 +1617,94 @@ function renderOverrideForm(project, blockers, currentUser, aiGenerationService,
   });
 
   return form;
+}
+
+function renderCertificationPackagePanel(project, currentUser, aiGenerationService, onChange) {
+  const panel = document.createElement("section");
+  panel.className = "certification-panel";
+  panel.setAttribute("aria-label", "Certification package preview");
+
+  const dashboard = aiGenerationService.getReadinessDashboard(project.projectId);
+  const packages = aiGenerationService.listCertificationPackages(project.projectId);
+  const latestPackage = packages.at(-1);
+
+  const header = document.createElement("div");
+  header.className = "panel-header";
+  const heading = document.createElement("h3");
+  heading.textContent = "Certification Package";
+  const generateButton = document.createElement("button");
+  generateButton.type = "button";
+  generateButton.className = "secondary-action";
+  generateButton.textContent = "Generate Package";
+  generateButton.disabled =
+    !currentUser.canExportToJira || dashboard?.status !== READINESS_STATUSES.READY;
+  header.append(heading, generateButton);
+
+  const status = document.createElement("p");
+  status.className = "approval-preview";
+  status.setAttribute("role", "status");
+  status.textContent =
+    dashboard?.status === READINESS_STATUSES.READY
+      ? "Ready-to-Build package preview can be generated for the current baseline."
+      : "Package generation is blocked until readiness is Ready or accepted risk opens the gate.";
+
+  const checklist = document.createElement("ul");
+  checklist.className = "package-checklist";
+  for (const [label, enabled] of [
+    ["Versioned decision objects", true],
+    ["Traceability matrix", latestPackage?.includesTraceabilityMatrix ?? true],
+    ["Approval records", latestPackage?.includesApprovals ?? true],
+    ["Risks", latestPackage?.includesRisks ?? true],
+    ["Override log", latestPackage?.includesOverrides ?? true]
+  ]) {
+    const item = document.createElement("li");
+    item.textContent = `${label}: ${enabled ? "Included" : "Excluded"}`;
+    checklist.append(item);
+  }
+
+  const preview = document.createElement("div");
+  preview.className = "package-preview";
+  if (latestPackage) {
+    const title = document.createElement("strong");
+    title.textContent = `${formatStatus(latestPackage.status)} package`;
+    const details = document.createElement("p");
+    details.textContent = `${latestPackage.packageId} generated ${latestPackage.generatedAt}.`;
+    const uri = document.createElement("span");
+    uri.textContent = latestPackage.packageUri;
+    preview.append(title, details, uri);
+  } else {
+    const empty = document.createElement("p");
+    empty.className = "empty-state neutral";
+    empty.textContent = "No package preview has been generated.";
+    preview.append(empty);
+  }
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+
+  generateButton.addEventListener("click", () => {
+    const result = aiGenerationService.generateCertificationPackage(
+      project.projectId,
+      {
+        includeTraceabilityMatrix: true,
+        includeApprovals: true,
+        includeRisks: true,
+        includeOverrides: true
+      },
+      currentUser.actor
+    );
+
+    if (!result.ok) {
+      error.textContent = result.error;
+      return;
+    }
+
+    onChange?.();
+  });
+
+  panel.append(header, status, checklist, preview, error);
+  return panel;
 }
 
 function renderBlockerItem(blocker, onOpenObject) {

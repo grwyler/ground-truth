@@ -119,6 +119,106 @@ test("local readiness dashboard opens the gate when links and approvals are comp
   assert.equal(dashboard.jiraExportDisabled, false);
 });
 
+test("local certification package preview is generated only after the gate is open", () => {
+  const projectService = createLocalProjectService([
+    {
+      projectId: "project-dashboard-certification",
+      name: "Dashboard Certification Project",
+      description: null,
+      customer: null,
+      contractNumber: null,
+      programName: null,
+      status: "draft",
+      readinessStatus: "not_ready",
+      readinessScore: 0,
+      createdBy: programManager.id,
+      createdAt: "2026-04-28T12:00:00.000Z",
+      updatedAt: "2026-04-28T12:00:00.000Z"
+    }
+  ]);
+  const service = createLocalAiGenerationService(projectService);
+  const workflow = service.createDecisionObject(
+    "project-dashboard-certification",
+    {
+      type: DECISION_OBJECT_TYPES.WORKFLOW,
+      title: "Certification workflow",
+      content: { summary: "Operator validates the certification workflow." },
+      ownerId: operatorRepresentative.id
+    },
+    programManager
+  );
+  const requirement = service.createDecisionObject(
+    "project-dashboard-certification",
+    {
+      type: DECISION_OBJECT_TYPES.REQUIREMENT,
+      title: "Certification requirement",
+      content: {
+        requirement: "The system shall preview the certification package.",
+        acceptance_criteria: ["The package includes traceability metadata."]
+      },
+      ownerId: engineeringLead.id
+    },
+    programManager
+  );
+  const blocked = service.generateCertificationPackage(
+    "project-dashboard-certification",
+    {},
+    programManager
+  );
+  const testObject = service.createDecisionObject(
+    "project-dashboard-certification",
+    {
+      type: DECISION_OBJECT_TYPES.TEST,
+      title: "Certification preview acceptance criteria",
+      content: { acceptance_criteria: ["Traceability appears in the package."] },
+      ownerId: engineeringLead.id
+    },
+    programManager
+  );
+
+  service.createTraceLink(
+    "project-dashboard-certification",
+    requirement.decisionObject.objectId,
+    {
+      targetObjectId: workflow.decisionObject.objectId,
+      relationshipType: "derived_from"
+    },
+    programManager
+  );
+  service.createTraceLink(
+    "project-dashboard-certification",
+    requirement.decisionObject.objectId,
+    {
+      targetObjectId: testObject.decisionObject.objectId,
+      relationshipType: "validated_by"
+    },
+    programManager
+  );
+  service.submitApproval(
+    "project-dashboard-certification",
+    workflow.decisionObject.objectId,
+    { version: 1, approvalDecision: "approved", comment: "Workflow is ready." },
+    operatorRepresentative
+  );
+  service.submitApproval(
+    "project-dashboard-certification",
+    requirement.decisionObject.objectId,
+    { version: 1, approvalDecision: "approved", comment: "Requirement is ready." },
+    customerPm
+  );
+  const generated = service.generateCertificationPackage(
+    "project-dashboard-certification",
+    {},
+    engineeringLead
+  );
+
+  assert.equal(blocked.ok, false);
+  assert.equal(generated.ok, true);
+  assert.equal(generated.package.artifact.traceabilityMatrix.length, 2);
+  assert.equal(service.listCertificationPackages("project-dashboard-certification").length, 1);
+  assert.equal(service.listAuditEvents().at(-1).entity_type, "certification_package");
+});
+
 test("local readiness dashboard opens permitted path after PM override", () => {
   const projectService = createLocalProjectService([
     {

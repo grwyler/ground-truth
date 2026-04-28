@@ -8,6 +8,7 @@ import { createLocalStorageAdapter } from "../../../packages/storage/src/index.j
 import { handleAuthRoute } from "./auth/routes.js";
 import { createAiRoute } from "./routes/ai.js";
 import { createApprovalsRoute } from "./routes/approvals.js";
+import { createCertificationPackageRoute } from "./routes/certification-package.js";
 import { createDecisionObjectsRoute } from "./routes/decision-objects.js";
 import { createDocumentsRoute } from "./routes/documents.js";
 import { createOverridesRoute } from "./routes/overrides.js";
@@ -24,6 +25,7 @@ export function createApiServer({
 } = {}) {
   const handleAiRoute = createAiRoute({ projectRepository, aiDraftAdapter });
   const handleApprovalsRoute = createApprovalsRoute({ projectRepository });
+  const handleCertificationPackageRoute = createCertificationPackageRoute({ projectRepository });
   const handleDecisionObjectsRoute = createDecisionObjectsRoute({ projectRepository });
   const handleOverridesRoute = createOverridesRoute({ projectRepository });
   const handleProjectsRoute = createProjectsRoute({ projectRepository });
@@ -52,6 +54,10 @@ export function createApiServer({
     }
 
     if (await handleOverridesRoute(request, response)) {
+      return;
+    }
+
+    if (await handleCertificationPackageRoute(request, response)) {
       return;
     }
 
