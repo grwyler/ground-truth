@@ -88,7 +88,9 @@ test("Jira export API creates a mock export job and returns status by ID", async
     assert.equal(response.status, 202);
     assert.equal(body.exportJob.status, "completed");
     assert.equal(body.exportJob.createdIssues[0].jiraIssueKey, "GT-1");
-    assert.equal(body.exportJob.preview[0].workflowLink.objectId, "obj-workflow-jira-api");
+    const story = body.exportJob.preview.find((issue) => issue.issueType === "Story");
+    assert.ok(story);
+    assert.equal(story.workflowLink.objectId, "obj-workflow-jira-api");
     assert.equal(statusResponse.status, 200);
     assert.equal(statusBody.exportJob.exportJobId, body.exportJob.exportJobId);
     assert.equal(repository.listJiraExports("project-jira-api").length, 1);

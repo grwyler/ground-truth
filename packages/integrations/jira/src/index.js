@@ -48,15 +48,19 @@ export function createMockJiraAdapter() {
 }
 
 function toCreatedIssue(issue, jiraProjectKey, index) {
+  const sourceId = issue.sourceRequirementId ?? issue.sourceObjectId ?? issue.objectId;
   return Object.freeze({
     objectId: issue.objectId,
     jiraIssueKey: `${jiraProjectKey}-${index + 1}`,
     issueType: issue.issueType,
-    traceabilityUrl: `local://jira/${jiraProjectKey}/${issue.sourceRequirementId}`,
+    traceabilityUrl: `local://jira/${jiraProjectKey}/${sourceId}`,
     sourceRequirementId: issue.sourceRequirementId,
+    sourceObjectId: issue.sourceObjectId ?? sourceId,
+    sourceObjectType: issue.sourceObjectType ?? null,
     versionId: issue.versionId,
     workflowLink: issue.workflowLink,
     acceptanceCriteriaLink: issue.acceptanceCriteriaLink,
+    parentEpicObjectId: issue.parentEpicObjectId ?? null,
     approvalMetadata: issue.approvalMetadata
   });
 }

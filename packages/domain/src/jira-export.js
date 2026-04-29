@@ -9,7 +9,8 @@ import {
   TRACE_RELATIONSHIP_TYPES
 } from "./models/index.js";
 
-export const JIRA_EXPORT_MAPPING_VERSION = "mvp-jira-export-v1";
+export const JIRA_EXPORT_MAPPING_VERSION = "mvp-jira-export-v2";
+
 export const JIRA_EXPORT_MODES = Object.freeze({
   CREATE_EPICS_AND_STORIES: "CreateEpicsAndStories"
 });
@@ -56,7 +57,38 @@ export function buildJiraExportPreview(
     }
   }
 
-  const issues = activeDecisionObjects
+  const workflowIssues = activeDecisionObjects
+    .filter((decisionObject) => decisionObject.type === DECISION_OBJECT_TYPES.WORKFLOW)
+    .map((workflow, index) => {
+      const version = currentVersionByObjectId.get(workflow.object_id);
+      const content = version?.content ?? {};
+      const summary = content.summary ?? workflow.title;
+
+      return Object.freeze({
+        objectId: workflow.object_id,
+        sourceObjectId: workflow.object_id,
+        sourceObjectType: "workflow",
+        issueType: "Epic",
+        title: workflow.title,
+        summary: workflow.title,
+        description: summary,
+        sourceRequirementId: null,
+        versionId: version?.version_id ?? null,
+        approvalMetadata: Object.freeze([]),
+        workflowLink: null,
+        acceptanceCriteriaLink: null,
+        parentEpicObjectId: null,
+        traceabilityMetadata: Object.freeze({
+          projectId: project.project_id,
+          jiraMappingVersion: JIRA_EXPORT_MAPPING_VERSION,
+          includeTraceabilityLinks,
+          requiredLinkIds: Object.freeze([])
+        }),
+        order: index + 1
+      });
+    });
+
+  const requirementIssues = activeDecisionObjects
     .filter((decisionObject) => decisionObject.type === DECISION_OBJECT_TYPES.REQUIREMENT)
     .map((requirement, index) => {
       const version = currentVersionByObjectId.get(requirement.object_id);
@@ -95,6 +127,8 @@ export function buildJiraExportPreview(
 
       return Object.freeze({
         objectId: requirement.object_id,
+        sourceObjectId: requirement.object_id,
+        sourceObjectType: "requirement",
         issueType: "Story",
         title: requirement.title,
         summary: requirement.title,
@@ -104,6 +138,7 @@ export function buildJiraExportPreview(
         approvalMetadata: Object.freeze(approvalMetadata),
         workflowLink,
         acceptanceCriteriaLink,
+        parentEpicObjectId: workflowLink?.objectId ?? null,
         traceabilityMetadata: Object.freeze({
           projectId: project.project_id,
           jiraMappingVersion: JIRA_EXPORT_MAPPING_VERSION,
@@ -116,9 +151,11 @@ export function buildJiraExportPreview(
               : []
           )
         }),
-        order: index + 1
+        order: workflowIssues.length + index + 1
       });
     });
+
+  const issues = [...workflowIssues, ...requirementIssues];
 
   return Object.freeze({
     ok: true,
@@ -258,7 +295,8 @@ function validateJiraExportRequest(project, readinessResult, input, actor) {
     errors.push("JIRA_EXPORT_UNAUTHORIZED");
   }
 
-  if (readinessResult?.evaluation?.status !== READINESS_STATUSES.READY) {
+  const allowWhenNotReady = input.allowWhenNotReady === true;
+  if (!allowWhenNotReady && readinessResult?.evaluation?.status !== READINESS_STATUSES.READY) {
     errors.push("PROJECT_NOT_READY");
   }
 

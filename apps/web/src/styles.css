@@ -71,6 +71,10 @@ h1 {
   margin-top: 24px;
 }
 
+.project-layout.single-column {
+  grid-template-columns: 1fr;
+}
+
 .project-list,
 .project-workspace {
   min-width: 0;
@@ -167,6 +171,128 @@ h2 {
   border-top: 1px solid #e2e7ef;
   margin-top: 24px;
   padding-top: 20px;
+}
+
+.advanced-panel {
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  margin-top: 14px;
+  padding: 10px 12px;
+}
+
+.advanced-panel summary {
+  cursor: pointer;
+  font-weight: 800;
+  list-style: none;
+}
+
+.plan-summary,
+.plan-editor {
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px;
+}
+
+.plan-summary-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.plan-card {
+  border: 1px solid #e2e7ef;
+  border-radius: 6px;
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.plan-card h5 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.simple-list,
+.missing-info-list,
+.requirements-list {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.missing-info-list li {
+  border: 1px solid #e2e7ef;
+  border-radius: 6px;
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+}
+
+.missing-info-list span {
+  color: #596579;
+}
+
+.requirements-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.requirements-group h6 {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #596579;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.plan-editor-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.plan-edit-card {
+  border: 1px solid #e2e7ef;
+  border-radius: 6px;
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.plan-edit-card label {
+  display: grid;
+  gap: 6px;
+  color: #3d4756;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.plan-edit-card input,
+.plan-edit-card textarea {
+  border: 1px solid #cdd6e3;
+  border-radius: 6px;
+  color: #17202a;
+  font: inherit;
+  line-height: 1.45;
+  padding: 9px 10px;
+  width: 100%;
+}
+
+.plan-edit-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.plan-edit-status {
+  color: #596579;
+  font-size: 0.85rem;
+  font-weight: 700;
 }
 
 .approval-panel {
@@ -532,6 +658,25 @@ h3 {
 }
 
 .secondary-action:disabled {
+  border-color: #cdd6e3;
+  background: #eef2f6;
+  color: #596579;
+  cursor: not-allowed;
+}
+
+.primary-action {
+  border: 1px solid #243244;
+  border-radius: 6px;
+  background: #243244;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 800;
+  padding: 11px 14px;
+}
+
+.primary-action:disabled {
   border-color: #cdd6e3;
   background: #eef2f6;
   color: #596579;
@@ -1008,6 +1153,10 @@ h4 {
   }
 
   .draft-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-summary-grid {
     grid-template-columns: 1fr;
   }
 

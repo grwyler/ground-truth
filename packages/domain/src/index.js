@@ -25,6 +25,7 @@ export * from "./decision-objects.js";
 export * from "./documents.js";
 export * from "./models/index.js";
 export * from "./jira-export.js";
+export * from "./plan.js";
 export * from "./ownership.js";
 export * from "./overrides.js";
 export * from "./projects.js";

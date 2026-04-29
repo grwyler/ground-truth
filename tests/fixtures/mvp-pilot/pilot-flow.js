@@ -104,33 +104,43 @@ export async function runPilotHappyPath(baseUrl) {
 
   const systemApproval = await postJson(
     baseUrl,
-    `/api/v1/projects/${project.projectId}/decision-objects/${accepted.requirement.objectId}/approvals`,
+    `/api/v1/projects/${project.projectId}/decision-objects/${accepted.requirements[0].objectId}/approvals`,
     "system-ai-assistant",
     {
-      version: accepted.requirement.currentVersion,
+      version: accepted.requirements[0].currentVersion,
       approvalDecision: "approved",
       comment: "System actor must not be allowed to approve."
     }
   );
   assert.equal(systemApproval.status, 403);
 
-  await createTraceLink(
-    baseUrl,
-    project.projectId,
-    accepted.requirement.objectId,
-    accepted.workflow.objectId,
-    TRACE_RELATIONSHIP_TYPES.DERIVED_FROM
-  );
-  await createTraceLink(
-    baseUrl,
-    project.projectId,
-    accepted.requirement.objectId,
-    accepted.testObject.objectId,
-    TRACE_RELATIONSHIP_TYPES.VALIDATED_BY
-  );
+  const primaryWorkflow = accepted.workflows[0];
+  const primaryTest = accepted.tests[0];
 
-  await approveObject(baseUrl, project.projectId, accepted.workflow, "user-operator-001");
-  await approveObject(baseUrl, project.projectId, accepted.requirement, "user-customer-pm-001");
+  for (const requirement of accepted.requirements) {
+    await createTraceLink(
+      baseUrl,
+      project.projectId,
+      requirement.objectId,
+      primaryWorkflow.objectId,
+      TRACE_RELATIONSHIP_TYPES.DERIVED_FROM
+    );
+    await createTraceLink(
+      baseUrl,
+      project.projectId,
+      requirement.objectId,
+      primaryTest.objectId,
+      TRACE_RELATIONSHIP_TYPES.VALIDATED_BY
+    );
+  }
+
+  for (const workflow of accepted.workflows) {
+    await approveObject(baseUrl, project.projectId, workflow, "user-operator-001");
+  }
+
+  for (const requirement of accepted.requirements) {
+    await approveObject(baseUrl, project.projectId, requirement, "user-customer-pm-001");
+  }
 
   const startedAt = Date.now();
   const readiness = await getJson(
@@ -163,15 +173,12 @@ export async function runPilotHappyPath(baseUrl) {
   const exportResult = await exportToJira(baseUrl, project.projectId);
   assert.equal(exportResult.status, 202);
   assert.equal(exportResult.body.exportJob.status, "completed");
-  assert.equal(exportResult.body.exportJob.preview[0].sourceRequirementId, accepted.requirement.objectId);
-  assert.equal(exportResult.body.exportJob.preview[0].workflowLink.objectId, accepted.workflow.objectId);
-  assert.equal(
-    exportResult.body.exportJob.preview[0].acceptanceCriteriaLink.objectId,
-    accepted.testObject.objectId
-  );
-  assert.ok(
-    exportResult.body.exportJob.preview[0].traceabilityMetadata.requiredLinkIds.length >= 2
-  );
+  const firstStory = exportResult.body.exportJob.preview.find((issue) => issue.issueType === "Story");
+  assert.ok(firstStory);
+  assert.equal(firstStory.sourceRequirementId, accepted.requirements[0].objectId);
+  assert.equal(firstStory.workflowLink.objectId, primaryWorkflow.objectId);
+  assert.equal(firstStory.acceptanceCriteriaLink.objectId, primaryTest.objectId);
+  assert.ok(firstStory.traceabilityMetadata.requiredLinkIds.length >= 2);
 
   return {
     project,
@@ -320,21 +327,21 @@ async function acceptDraftsAndAssignOwners(baseUrl, projectId, decisionObjects) 
     accepted.push(acceptResponse.body.decisionObject);
   }
 
-  const workflow = accepted.find((object) => object.type === DECISION_OBJECT_TYPES.WORKFLOW);
-  const requirement = accepted.find((object) => object.type === DECISION_OBJECT_TYPES.REQUIREMENT);
-  const testObject = accepted.find((object) => object.type === DECISION_OBJECT_TYPES.TEST);
-  const risk = accepted.find((object) => object.type === DECISION_OBJECT_TYPES.RISK);
+  const workflows = accepted.filter((object) => object.type === DECISION_OBJECT_TYPES.WORKFLOW);
+  const requirements = accepted.filter((object) => object.type === DECISION_OBJECT_TYPES.REQUIREMENT);
+  const tests = accepted.filter((object) => object.type === DECISION_OBJECT_TYPES.TEST);
+  const risks = accepted.filter((object) => object.type === DECISION_OBJECT_TYPES.RISK);
 
-  assert.ok(workflow);
-  assert.ok(requirement);
-  assert.ok(testObject);
-  assert.ok(risk);
+  assert.ok(workflows.length > 0);
+  assert.ok(requirements.length > 0);
+  assert.ok(tests.length > 0);
+  assert.ok(risks.length > 0);
 
   return {
-    workflow: await assignOwner(baseUrl, projectId, workflow, "user-operator-001"),
-    requirement: await assignOwner(baseUrl, projectId, requirement, "user-eng-001"),
-    testObject: await assignOwner(baseUrl, projectId, testObject, "user-eng-001"),
-    risk: await assignOwner(baseUrl, projectId, risk, "user-pm-001")
+    workflows: await Promise.all(workflows.map((workflow) => assignOwner(baseUrl, projectId, workflow, "user-operator-001"))),
+    requirements: await Promise.all(requirements.map((requirement) => assignOwner(baseUrl, projectId, requirement, "user-eng-001"))),
+    tests: await Promise.all(tests.map((testObject) => assignOwner(baseUrl, projectId, testObject, "user-eng-001"))),
+    risks: await Promise.all(risks.map((risk) => assignOwner(baseUrl, projectId, risk, "user-pm-001")))
   };
 }
 

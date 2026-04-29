@@ -25,6 +25,7 @@ import {
   buildVersionDiff,
   buildOwnerAssignment,
   buildDocumentRecord,
+  buildGeneratedPlan,
   buildOverrideAuditEvent,
   buildOverrideRecord,
   buildQueuedAiGenerationJob,
@@ -81,54 +82,25 @@ export function renderAppShell(
   header.className = "workspace-header";
 
   const title = document.createElement("h1");
-  title.textContent = "Projects";
+  title.textContent = "Plan Generator";
 
   const summary = document.createElement("p");
   summary.className = "summary";
-  summary.textContent = `${metadata.name} ${metadata.stage} workspace for ${currentUser.actor.roleLabel}`;
+  summary.textContent =
+    "Upload a vague SOW \u2192 generate workflows, requirements, acceptance criteria, risks, and Jira-ready tickets in minutes.";
   header.append(title, summary);
-
-  const nav = document.createElement("nav");
-  nav.setAttribute("aria-label", "Available actions");
-  nav.className = "role-actions";
-
-  const actions = [
-    ["Projects", currentUser.canReadProject],
-    ["Manage Project", currentUser.canManageProject],
-    ["Approve", currentUser.canApprove],
-    ["Override", currentUser.canSubmitOverride],
-    ["Jira Export", currentUser.canExportToJira]
-  ];
-
-  for (const [label, isVisible] of actions) {
-    if (!isVisible) {
-      continue;
-    }
-
-    const action = document.createElement("span");
-    action.textContent = label;
-    nav.append(action);
-  }
-
-  header.append(nav);
   shell.append(header);
 
   const content = document.createElement("div");
-  content.className = "project-layout";
-  const listRegion = document.createElement("section");
-  listRegion.className = "project-list";
-  listRegion.setAttribute("aria-label", "Project list");
+  content.className = "project-layout single-column";
   const workspace = document.createElement("section");
   workspace.className = "project-workspace";
-  workspace.setAttribute("aria-label", "Project workspace");
+  workspace.setAttribute("aria-label", "Plan workspace");
 
-  content.append(listRegion, workspace);
+  content.append(workspace);
   shell.append(content);
   container.append(shell);
 
-  renderProjectIntake(listRegion, projectService, currentUser, (project) => {
-    renderProjectWorkspace(workspace, project, currentUser, documentService, aiGenerationService);
-  });
   renderProjectWorkspace(
     workspace,
     projectService.listProjects()[0] ?? null,
@@ -254,6 +226,23 @@ export function createLocalAiGenerationService(
 
           return toDecisionObjectSummary(decisionObject, version);
         });
+  }
+
+  function getGeneratedPlan(projectId) {
+    const project = projectService.listProjects().find((candidate) => candidate.projectId === projectId);
+
+    if (!project) {
+      return null;
+    }
+
+    const documents = documentService.listDocuments(projectId).map(toDocumentRecord);
+    const result = buildGeneratedPlan(toProjectRecord(project), documents, {
+      decisionObjects,
+      decisionObjectVersions,
+      traceLinks
+    });
+
+    return result.ok ? result.plan : null;
   }
 
   function findDraft(projectId, objectId) {
@@ -516,6 +505,8 @@ export function createLocalAiGenerationService(
   return Object.freeze({
     listDecisionObjects,
 
+    getGeneratedPlan,
+
     listAssignableOwners,
 
     listTraceLinks,
@@ -563,7 +554,7 @@ export function createLocalAiGenerationService(
         return {
           ok: false,
           error: previewResult.validation.errors.includes("PROJECT_NOT_READY")
-            ? "Jira export is blocked until Ready-to-Build or accepted risk opens the gate."
+            ? "Jira export is blocked by readiness rules. Enable allowWhenNotReady for MVP demos."
             : "Enter a valid Jira project key and use an authorized export role."
         };
       }
@@ -1030,6 +1021,86 @@ export function createLocalAiGenerationService(
 
         decisionObjects.push(...normalized.decisionObjects);
         decisionObjectVersions.push(...normalized.decisionObjectVersions);
+
+        const workflowByTitle = new Map(
+          normalized.decisionObjects
+            .filter((decisionObject) => decisionObject.type === DECISION_OBJECT_TYPES.WORKFLOW)
+            .map((workflow) => [workflow.title, workflow])
+        );
+        const requirementByTitle = new Map(
+          normalized.decisionObjects
+            .filter((decisionObject) => decisionObject.type === DECISION_OBJECT_TYPES.REQUIREMENT)
+            .map((requirement) => [requirement.title, requirement])
+        );
+
+        for (const version of normalized.decisionObjectVersions) {
+          const decisionObject = normalized.decisionObjects.find(
+            (candidate) => candidate.object_id === version.object_id
+          );
+
+          if (!decisionObject || decisionObject.type !== DECISION_OBJECT_TYPES.REQUIREMENT) {
+            continue;
+          }
+
+          const workflowTitle = version?.content?.derived_from_workflow_title;
+          const workflow = workflowByTitle.get(workflowTitle);
+
+          if (!workflow) {
+            continue;
+          }
+
+          const link = buildTraceLinkCreate(
+            decisionObject,
+            workflow,
+            { relationshipType: TRACE_RELATIONSHIP_TYPES.DERIVED_FROM },
+            actor,
+            {
+              idGenerator: (kind) => {
+                draftIdSequence += 1;
+                return `local-${kind}-${draftIdSequence}`;
+              }
+            }
+          );
+
+          if (link.ok) {
+            traceLinks.push(link.traceLink);
+          }
+        }
+
+        for (const version of normalized.decisionObjectVersions) {
+          const decisionObject = normalized.decisionObjects.find(
+            (candidate) => candidate.object_id === version.object_id
+          );
+
+          if (!decisionObject || decisionObject.type !== DECISION_OBJECT_TYPES.TEST) {
+            continue;
+          }
+
+          const requirementTitle = version?.content?.validates_requirement_title;
+          const requirement = requirementByTitle.get(requirementTitle);
+
+          if (!requirement) {
+            continue;
+          }
+
+          const link = buildTraceLinkCreate(
+            requirement,
+            decisionObject,
+            { relationshipType: TRACE_RELATIONSHIP_TYPES.VALIDATED_BY },
+            actor,
+            {
+              idGenerator: (kind) => {
+                draftIdSequence += 1;
+                return `local-${kind}-${draftIdSequence}`;
+              }
+            }
+          );
+
+          if (link.ok) {
+            traceLinks.push(link.traceLink);
+          }
+        }
+
         const completed = markAiGenerationJobCompleted(runningJob);
         jobs[jobs.length - 1] = completed;
         auditEvents.push(
@@ -1167,26 +1238,12 @@ function renderProjectWorkspace(
   }
 
   const heading = document.createElement("h2");
-  heading.textContent = project.name;
-  const meta = document.createElement("dl");
-  meta.className = "project-meta";
+  heading.textContent = project.name ?? "Plan workspace";
 
-  const rows = [
-    ["Status", formatStatus(project.status)],
-    ["Readiness", formatStatus(project.readinessStatus)],
-    ["Score", `${project.readinessScore}%`],
-    ["Customer", project.customer ?? "Unassigned"],
-    ["Program", project.programName ?? "Unassigned"],
-    ["Contract", project.contractNumber ?? "Unassigned"]
-  ];
-
-  for (const [label, value] of rows) {
-    const term = document.createElement("dt");
-    term.textContent = label;
-    const description = document.createElement("dd");
-    description.textContent = value;
-    meta.append(term, description);
-  }
+  const helper = document.createElement("p");
+  helper.className = "summary";
+  helper.textContent =
+    "Step 1: Upload documents. Step 2: Generate Plan. Step 3: Edit. Step 4: Export to Jira.";
 
   const documentPanel = renderDocumentInventory(project, currentUser, documentService, () => {
     renderProjectWorkspace(
@@ -1198,32 +1255,7 @@ function renderProjectWorkspace(
       selectedObjectId
     );
   });
-  const readinessDashboard = renderReadinessDashboard(
-    project,
-    currentUser,
-    aiGenerationService,
-    (objectId) => {
-      renderProjectWorkspace(
-        container,
-        project,
-        currentUser,
-        documentService,
-        aiGenerationService,
-        objectId
-      );
-    },
-    () => {
-      renderProjectWorkspace(
-        container,
-        project,
-        currentUser,
-        documentService,
-        aiGenerationService,
-        selectedObjectId
-      );
-    }
-  );
-  const aiPanel = renderAiGenerationPanel(
+  const planPanel = renderAiGenerationPanel(
     project,
     currentUser,
     documentService,
@@ -1240,31 +1272,6 @@ function renderProjectWorkspace(
     },
     selectedObjectId
   );
-  const approvalPanel = renderApprovalCenter(project, currentUser, aiGenerationService, () => {
-    renderProjectWorkspace(
-      container,
-      project,
-      currentUser,
-      documentService,
-      aiGenerationService,
-      selectedObjectId
-    );
-  });
-  const certificationPanel = renderCertificationPackagePanel(
-    project,
-    currentUser,
-    aiGenerationService,
-    () => {
-      renderProjectWorkspace(
-        container,
-        project,
-        currentUser,
-        documentService,
-        aiGenerationService,
-        selectedObjectId
-      );
-    }
-  );
   const jiraExportPanel = renderJiraExportPanel(project, currentUser, aiGenerationService, () => {
     renderProjectWorkspace(
       container,
@@ -1278,13 +1285,10 @@ function renderProjectWorkspace(
 
   container.append(
     heading,
-    meta,
-    readinessDashboard,
-    certificationPanel,
+    helper,
+    planPanel,
     jiraExportPanel,
-    documentPanel,
-    aiPanel,
-    approvalPanel
+    documentPanel
   );
 }
 
@@ -1411,13 +1415,13 @@ function renderAiGenerationPanel(
 ) {
   const panel = document.createElement("section");
   panel.className = "ai-panel";
-  panel.setAttribute("aria-label", "AI draft generation");
+  panel.setAttribute("aria-label", "Plan generation");
 
   const header = document.createElement("div");
   header.className = "panel-header";
 
   const heading = document.createElement("h3");
-  heading.textContent = "AI Draft";
+  heading.textContent = "Generate Plan";
 
   const status = document.createElement("p");
   status.className = "draft-status";
@@ -1425,8 +1429,8 @@ function renderAiGenerationPanel(
 
   const generateButton = document.createElement("button");
   generateButton.type = "button";
-  generateButton.className = "secondary-action";
-  generateButton.textContent = "Generate Draft";
+  generateButton.className = "primary-action";
+  generateButton.textContent = "Generate Plan";
 
   const documents = documentService.listDocuments(project.projectId);
   const drafts = aiGenerationService.listDecisionObjects(project.projectId);
@@ -1445,12 +1449,11 @@ function renderAiGenerationPanel(
 
   header.append(heading, generateButton);
   panel.append(header, status);
-  panel.append(renderDecisionObjectCreateForm(project, currentUser, aiGenerationService, onChange));
 
   if (documents.length === 0 && drafts.length === 0) {
     const empty = document.createElement("p");
     empty.className = "empty-state";
-    empty.textContent = "AI draft generation is available after documents are uploaded.";
+    empty.textContent = "Upload a SOW to enable plan generation.";
     panel.append(empty);
     return panel;
   }
@@ -1458,12 +1461,23 @@ function renderAiGenerationPanel(
   if (drafts.length === 0) {
     const empty = document.createElement("p");
     empty.className = "empty-state neutral";
-    empty.textContent = "No AI draft objects generated yet.";
+    empty.textContent = "No plan generated yet.";
     panel.append(empty);
     return panel;
   }
 
-  panel.append(
+  const plan = aiGenerationService.getGeneratedPlan(project.projectId);
+  if (plan) {
+    panel.append(renderPlanSummaryView(plan));
+    panel.append(renderPlanEditorView(project, currentUser, aiGenerationService, plan, onChange));
+  }
+
+  const advanced = document.createElement("details");
+  advanced.className = "advanced-panel";
+  const summary = document.createElement("summary");
+  summary.textContent = "Advanced (draft objects, traceability, approvals)";
+  advanced.append(summary);
+  advanced.append(
     renderDraftReviewWorkspace(
       project,
       currentUser,
@@ -1473,7 +1487,328 @@ function renderAiGenerationPanel(
       selectedObjectId
     )
   );
+  panel.append(advanced);
   return panel;
+}
+
+function renderPlanSummaryView(plan) {
+  const section = document.createElement("section");
+  section.className = "plan-summary";
+  section.setAttribute("aria-label", "Plan summary");
+
+  const heading = document.createElement("h4");
+  heading.textContent = "Plan Summary";
+
+  const layout = document.createElement("div");
+  layout.className = "plan-summary-grid";
+
+  const workflowCard = document.createElement("section");
+  workflowCard.className = "plan-card";
+  const workflowHeading = document.createElement("h5");
+  workflowHeading.textContent = `Workflows (${plan.workflows.length})`;
+  workflowCard.append(workflowHeading);
+  workflowCard.append(renderSimpleList(plan.workflows.map((workflow) => workflow.title)));
+
+  const requirementCard = document.createElement("section");
+  requirementCard.className = "plan-card";
+  const requirementHeading = document.createElement("h5");
+  requirementHeading.textContent = `Requirements (${plan.requirements.length})`;
+  requirementCard.append(requirementHeading);
+  requirementCard.append(renderRequirementsGroupedByWorkflow(plan));
+
+  const riskCard = document.createElement("section");
+  riskCard.className = "plan-card";
+  const riskHeading = document.createElement("h5");
+  riskHeading.textContent = `Risks (${plan.risks.length})`;
+  riskCard.append(riskHeading);
+  riskCard.append(renderSimpleList(plan.risks.map((risk) => risk.title)));
+
+  const missingCard = document.createElement("section");
+  missingCard.className = "plan-card";
+  const missingHeading = document.createElement("h5");
+  missingHeading.textContent = "Missing information";
+  missingCard.append(missingHeading);
+  if (!Array.isArray(plan.missingInformation) || plan.missingInformation.length === 0) {
+    const ok = document.createElement("p");
+    ok.className = "empty-state neutral";
+    ok.textContent = "No obvious gaps detected.";
+    missingCard.append(ok);
+  } else {
+    const list = document.createElement("ul");
+    list.className = "missing-info-list";
+    for (const item of plan.missingInformation) {
+      const row = document.createElement("li");
+      const question = document.createElement("strong");
+      question.textContent = item.question;
+      const reason = document.createElement("span");
+      reason.textContent = item.reason;
+      row.append(question, reason);
+      list.append(row);
+    }
+    missingCard.append(list);
+  }
+
+  layout.append(workflowCard, requirementCard, riskCard, missingCard);
+  section.append(heading, layout);
+  return section;
+}
+
+function renderRequirementsGroupedByWorkflow(plan) {
+  const workflowTitleById = new Map(plan.workflows.map((workflow) => [workflow.workflowId, workflow.title]));
+  const groups = new Map();
+
+  for (const requirement of plan.requirements) {
+    const workflowIds = Array.isArray(requirement.workflowIds) && requirement.workflowIds.length > 0 ? requirement.workflowIds : ["__unlinked__"];
+    for (const workflowId of workflowIds) {
+      const group = groups.get(workflowId) ?? [];
+      group.push(requirement);
+      groups.set(workflowId, group);
+    }
+  }
+
+  if (groups.size === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state neutral";
+    empty.textContent = "No requirements yet.";
+    return empty;
+  }
+
+  const container = document.createElement("div");
+  container.className = "requirements-groups";
+
+  for (const [workflowId, requirements] of groups.entries()) {
+    const group = document.createElement("section");
+    group.className = "requirements-group";
+    const heading = document.createElement("h6");
+    heading.textContent =
+      workflowId === "__unlinked__" ? "Unlinked requirements" : workflowTitleById.get(workflowId) ?? workflowId;
+    const list = document.createElement("ul");
+    list.className = "requirements-list";
+    for (const requirement of requirements.slice(0, 6)) {
+      const item = document.createElement("li");
+      item.textContent = requirement.title;
+      list.append(item);
+    }
+    if (requirements.length > 6) {
+      const more = document.createElement("p");
+      more.className = "empty-state neutral";
+      more.textContent = `+${requirements.length - 6} more`;
+      group.append(heading, list, more);
+    } else {
+      group.append(heading, list);
+    }
+    container.append(group);
+  }
+
+  return container;
+}
+
+function renderSimpleList(items = []) {
+  if (!Array.isArray(items) || items.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state neutral";
+    empty.textContent = "None yet.";
+    return empty;
+  }
+
+  const list = document.createElement("ul");
+  list.className = "simple-list";
+  for (const value of items.slice(0, 10)) {
+    const item = document.createElement("li");
+    item.textContent = value;
+    list.append(item);
+  }
+  return list;
+}
+
+function renderPlanEditorView(project, currentUser, aiGenerationService, plan, onChange) {
+  const section = document.createElement("section");
+  section.className = "plan-editor";
+  section.setAttribute("aria-label", "Edit plan");
+
+  const heading = document.createElement("h4");
+  heading.textContent = "Edit Plan";
+
+  const hint = document.createElement("p");
+  hint.className = "empty-state neutral";
+  hint.textContent = "Edits update the underlying draft objects (approvals/readiness still exist under Advanced).";
+
+  const drafts = aiGenerationService.listDecisionObjects(project.projectId);
+  const draftById = new Map(drafts.map((draft) => [draft.objectId, draft]));
+
+  const content = document.createElement("div");
+  content.className = "plan-editor-grid";
+
+  content.append(
+    renderPlanEditorSection(
+      "Workflows",
+      plan.workflows.map((workflow) => ({
+        id: workflow.workflowId,
+        type: "workflow",
+        title: workflow.title,
+        text: workflow.summary
+      })),
+      draftById,
+      aiGenerationService,
+      project,
+      currentUser,
+      onChange
+    )
+  );
+
+  content.append(
+    renderPlanEditorSection(
+      "Requirements",
+      plan.requirements.map((requirement) => ({
+        id: requirement.requirementId,
+        type: "requirement",
+        title: requirement.title,
+        text: requirement.statement,
+        acceptanceCriteria: requirement.acceptanceCriteria
+      })),
+      draftById,
+      aiGenerationService,
+      project,
+      currentUser,
+      onChange
+    )
+  );
+
+  content.append(
+    renderPlanEditorSection(
+      "Risks",
+      plan.risks.map((risk) => ({
+        id: risk.riskId,
+        type: "risk",
+        title: risk.title,
+        text: `${risk.description}${risk.mitigation ? `\\n\\nMitigation: ${risk.mitigation}` : ""}`
+      })),
+      draftById,
+      aiGenerationService,
+      project,
+      currentUser,
+      onChange
+    )
+  );
+
+  section.append(heading, hint, content);
+  return section;
+}
+
+function renderPlanEditorSection(
+  label,
+  items,
+  draftById,
+  aiGenerationService,
+  project,
+  currentUser,
+  onChange
+) {
+  const section = document.createElement("section");
+  section.className = "plan-editor-section";
+  const heading = document.createElement("h5");
+  heading.textContent = label;
+  section.append(heading);
+
+  if (!Array.isArray(items) || items.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state neutral";
+    empty.textContent = `No ${label.toLowerCase()} yet.`;
+    section.append(empty);
+    return section;
+  }
+
+  for (const item of items) {
+    const draft = draftById.get(item.id);
+    if (!draft) {
+      continue;
+    }
+
+    const card = document.createElement("form");
+    card.className = "plan-edit-card";
+
+    const titleLabel = document.createElement("label");
+    titleLabel.textContent = "Title";
+    const titleInput = document.createElement("input");
+    titleInput.value = draft.title ?? item.title ?? "";
+    titleLabel.append(titleInput);
+
+    const contentLabel = document.createElement("label");
+    contentLabel.textContent = label === "Requirements" ? "Requirement" : "Content";
+    const contentArea = document.createElement("textarea");
+    contentArea.rows = 5;
+    contentArea.value = item.text ?? "";
+    contentLabel.append(contentArea);
+
+    const footer = document.createElement("div");
+    footer.className = "plan-edit-actions";
+    const save = document.createElement("button");
+    save.type = "submit";
+    save.className = "secondary-action";
+    save.textContent = "Save";
+    save.disabled = !currentUser.canManageProject;
+
+    const status = document.createElement("span");
+    status.className = "plan-edit-status";
+
+    footer.append(save, status);
+
+    card.append(titleLabel, contentLabel);
+
+    let criteriaArea = null;
+    if (label === "Requirements" && Array.isArray(item.acceptanceCriteria)) {
+      const criteriaLabel = document.createElement("label");
+      criteriaLabel.textContent = "Acceptance Criteria (one per line)";
+      criteriaArea = document.createElement("textarea");
+      criteriaArea.rows = 4;
+      criteriaArea.value = item.acceptanceCriteria.join("\n");
+      criteriaLabel.append(criteriaArea);
+      card.append(criteriaLabel);
+    }
+
+    card.addEventListener("submit", (event) => {
+      event.preventDefault();
+      status.textContent = "";
+
+      const nextTitle = titleInput.value.trim();
+      const nextText = contentArea.value;
+      const baseContent = editableTextToDraftContent({ type: item.type }, nextText);
+      const nextContent =
+        criteriaArea
+          ? {
+              ...baseContent,
+              acceptance_criteria: criteriaArea.value
+                .split("\n")
+                .map((line) => line.trim())
+                .filter(Boolean)
+            }
+          : baseContent;
+
+      const result = aiGenerationService.updateDraft(
+        project.projectId,
+        item.id,
+        {
+          title: nextTitle,
+          content: nextContent,
+          changeReason: "Edited from plan view."
+        },
+        currentUser.actor
+      );
+
+      if (!result.ok) {
+        status.textContent = result.error ?? "Save failed.";
+        return;
+      }
+
+      status.textContent = "Saved.";
+      onChange();
+    });
+
+    card.append(footer);
+    section.append(card);
+  }
+
+  return section;
 }
 
 function renderReadinessDashboard(
@@ -1885,9 +2220,7 @@ function renderJiraExportPanel(project, currentUser, aiGenerationService, onChan
   const gateMessage = document.createElement("p");
   gateMessage.className = "approval-preview";
   gateMessage.textContent =
-    dashboard?.status === READINESS_STATUSES.READY
-      ? "Export preview is available for the approved baseline."
-      : "Jira export remains blocked while the readiness gate is closed.";
+    "Export Jira-ready tickets (epics = workflows, stories = requirements). Readiness gating is available under Advanced, but export is enabled for fast MVP demos.";
 
   const form = document.createElement("form");
   form.className = "jira-export-form";
@@ -1912,7 +2245,7 @@ function renderJiraExportPanel(project, currentUser, aiGenerationService, onChan
   submit.type = "submit";
   submit.className = "secondary-action";
   submit.textContent = latestJob?.status === "failed" ? "Retry Export" : "Export Preview";
-  submit.disabled = dashboard?.status !== READINESS_STATUSES.READY || !currentUser.canExportToJira;
+  submit.disabled = !currentUser.canExportToJira;
 
   form.append(keyField, traceabilityField, error, submit);
   form.addEventListener("submit", (event) => {
@@ -1923,7 +2256,8 @@ function renderJiraExportPanel(project, currentUser, aiGenerationService, onChan
       {
         jiraProjectKey: String(formData.get("jiraProjectKey") ?? ""),
         exportMode: "CreateEpicsAndStories",
-        includeTraceabilityLinks: Boolean(formData.get("includeTraceabilityLinks"))
+        includeTraceabilityLinks: Boolean(formData.get("includeTraceabilityLinks")),
+        allowWhenNotReady: true
       },
       currentUser.actor
     );
@@ -1959,7 +2293,9 @@ function renderJiraExportPanel(project, currentUser, aiGenerationService, onChan
       const title = document.createElement("strong");
       title.textContent = `${issue.issueType}: ${issue.title}`;
       const metadata = document.createElement("span");
-      metadata.textContent = `Requirement ${issue.sourceRequirementId} | Version ${issue.versionId}`;
+      const traceId = issue.sourceRequirementId ?? issue.sourceObjectId ?? issue.objectId;
+      const epicHint = issue.parentEpicObjectId ? ` | Epic ${issue.parentEpicObjectId}` : "";
+      metadata.textContent = `Source ${traceId} | Version ${issue.versionId ?? "n/a"}${epicHint}`;
       item.append(title, metadata);
       list.append(item);
     }

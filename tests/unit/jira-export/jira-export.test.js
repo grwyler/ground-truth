@@ -65,14 +65,22 @@ test("Jira export preview maps approved requirements with traceability metadata"
 
   assert.equal(result.ok, true);
   assert.equal(result.preview.jiraProjectKey, "GT");
-  assert.equal(result.preview.jiraMappingVersion, "mvp-jira-export-v1");
-  assert.equal(result.preview.issues.length, 1);
-  assert.equal(result.preview.issues[0].sourceRequirementId, "obj-req-jira");
-  assert.equal(result.preview.issues[0].versionId, requirementVersion.version_id);
-  assert.equal(result.preview.issues[0].workflowLink.objectId, "obj-workflow-jira");
-  assert.equal(result.preview.issues[0].acceptanceCriteriaLink.objectId, "obj-test-jira");
-  assert.equal(result.preview.issues[0].approvalMetadata.length, 1);
-  assert.deepEqual(result.preview.issues[0].traceabilityMetadata.requiredLinkIds, [
+  assert.equal(result.preview.jiraMappingVersion, "mvp-jira-export-v2");
+  assert.equal(result.preview.issues.length, 2);
+
+  const epic = result.preview.issues.find((issue) => issue.issueType === "Epic");
+  const story = result.preview.issues.find((issue) => issue.issueType === "Story");
+
+  assert.ok(epic);
+  assert.ok(story);
+  assert.equal(epic.objectId, "obj-workflow-jira");
+  assert.equal(story.sourceRequirementId, "obj-req-jira");
+  assert.equal(story.versionId, requirementVersion.version_id);
+  assert.equal(story.parentEpicObjectId, "obj-workflow-jira");
+  assert.equal(story.workflowLink.objectId, "obj-workflow-jira");
+  assert.equal(story.acceptanceCriteriaLink.objectId, "obj-test-jira");
+  assert.equal(story.approvalMetadata.length, 1);
+  assert.deepEqual(story.traceabilityMetadata.requiredLinkIds, [
     "link-obj-req-jira-obj-workflow-jira",
     "link-obj-req-jira-obj-test-jira"
   ]);
@@ -131,9 +139,35 @@ test("mock Jira adapter creates issue mappings and supports failure state", () =
   assert.equal(successResult.status, JIRA_EXPORT_STATUSES.COMPLETED);
   assert.equal(successResult.createdIssues[0].jiraIssueKey, "GT-1");
   assert.equal(successJob.export_job_id, "jira-export-unit");
-  assert.equal(successJob.jira_issue_mappings.createdIssues.length, 1);
+  assert.equal(successJob.jira_issue_mappings.createdIssues.length, 2);
   assert.equal(failedResult.status, JIRA_EXPORT_STATUSES.FAILED);
   assert.equal(failedResult.errors[0].code, "JIRA_EXPORT_FAILED");
+});
+
+test("Jira export can be previewed before readiness when allowWhenNotReady is true", () => {
+  const requirement = decisionObject("obj-req-jira-override", DECISION_OBJECT_TYPES.REQUIREMENT);
+  const requirementVersion = versionFor(requirement);
+  const readiness = evaluateProjectReadiness(project, {
+    decisionObjects: [requirement],
+    decisionObjectVersions: [requirementVersion],
+    traceLinks: [],
+    approvals: [approvalFor(requirement, requirementVersion)]
+  });
+  const result = buildJiraExportPreview(
+    project,
+    readiness,
+    {
+      decisionObjects: [requirement],
+      decisionObjectVersions: [requirementVersion],
+      traceLinks: [],
+      approvals: [approvalFor(requirement, requirementVersion)]
+    },
+    { jiraProjectKey: "GT", allowWhenNotReady: true },
+    engineeringLead
+  );
+
+  assert.equal(readiness.evaluation.status, READINESS_STATUSES.NOT_READY);
+  assert.equal(result.ok, true);
 });
 
 const project = {

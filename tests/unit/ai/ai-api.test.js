@@ -55,7 +55,7 @@ test("AI API generates draft objects and exposes completed job status", async ()
 
     assert.equal(generateResponse.status, 201);
     assert.equal(generated.job.status, AI_JOB_STATUSES.COMPLETED);
-    assert.equal(generated.decisionObjects.length, 4);
+    assert.ok(generated.decisionObjects.length >= 6);
     assert.ok(
       generated.decisionObjects.every(
         (decisionObject) =>
@@ -65,7 +65,7 @@ test("AI API generates draft objects and exposes completed job status", async ()
       )
     );
     assert.equal(repository.listAiGenerationJobs("project-ai-api").length, 1);
-    assert.equal(repository.listDecisionObjects("project-ai-api").length, 4);
+    assert.ok(repository.listDecisionObjects("project-ai-api").length >= 6);
     assert.equal(repository.listAuditEvents("project-ai-api").length, 1);
 
     const statusResponse = await fetch(

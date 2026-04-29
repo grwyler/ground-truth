@@ -74,7 +74,12 @@ test("AI generation builds a queued job and deterministic draft objects", async 
   });
 
   assert.equal(normalized.ok, true);
-  assert.equal(normalized.decisionObjects.length, 4);
+  assert.ok(normalized.decisionObjects.length >= 6);
+  assert.ok(
+    normalized.decisionObjects.some(
+      (decisionObject) => decisionObject.type === DECISION_OBJECT_TYPES.WORKFLOW
+    )
+  );
   assert.ok(
     normalized.decisionObjects.some(
       (decisionObject) => decisionObject.type === DECISION_OBJECT_TYPES.REQUIREMENT

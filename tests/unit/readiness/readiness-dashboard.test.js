@@ -320,7 +320,9 @@ test("local Jira export preview is gated and preserves traceability metadata", (
   assert.equal(exported.ok, true);
   assert.equal(exported.exportJob.status, "completed");
   assert.equal(exported.exportJob.createdIssues[0].jiraIssueKey, "GT-1");
-  assert.equal(exported.exportJob.preview[0].workflowLink.objectId, workflow.decisionObject.objectId);
+  const story = exported.exportJob.preview.find((issue) => issue.issueType === "Story");
+  assert.ok(story);
+  assert.equal(story.workflowLink.objectId, workflow.decisionObject.objectId);
   assert.equal(service.listJiraExports("project-dashboard-jira").length, 1);
   assert.equal(service.listAuditEvents().at(-1).entity_type, "jira_export");
 });
