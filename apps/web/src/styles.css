@@ -295,6 +295,82 @@ h2 {
   font-weight: 700;
 }
 
+.landing {
+  display: grid;
+  gap: 14px;
+}
+
+.landing-checklist {
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+}
+
+.landing-checklist li {
+  color: #3d4756;
+  font-weight: 700;
+}
+
+.landing-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.landing-card {
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.landing-card h3 {
+  margin: 0;
+}
+
+.upload-dropzone {
+  border: 2px dashed #aab6c6;
+  border-radius: 10px;
+  color: #243244;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 28px 18px;
+  text-align: center;
+}
+
+.upload-dropzone.active {
+  background: #f0f7ff;
+  border-color: #2b6cb0;
+}
+
+.landing-card textarea {
+  border: 1px solid #cdd6e3;
+  border-radius: 8px;
+  color: #17202a;
+  font: inherit;
+  line-height: 1.45;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.debug-preview {
+  border: 1px solid #e2e7ef;
+  border-radius: 6px;
+  background: #f7f9fc;
+  color: #17202a;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+}
+
 .approval-panel {
   border-top: 1px solid #e2e7ef;
   display: grid;
@@ -1157,6 +1233,10 @@ h4 {
   }
 
   .plan-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-grid {
     grid-template-columns: 1fr;
   }
 

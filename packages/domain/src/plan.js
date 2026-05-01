@@ -97,7 +97,16 @@ export function buildGeneratedPlan(
       });
     });
 
-  const missingInformation = inferMissingInformation({ documents, workflows, requirements });
+  const missingInformation = inferMissingInformation({
+    documents,
+    workflows,
+    requirements,
+    keywords: extractKeywords(
+      documents
+        .map((document) => document.extracted_text ?? document.extractedText ?? "")
+        .join("\n\n")
+    )
+  });
 
   return Object.freeze({
     ok: true,
@@ -122,7 +131,7 @@ export function buildGeneratedPlan(
   });
 }
 
-function inferMissingInformation({ documents = [], workflows = [], requirements = [] } = {}) {
+function inferMissingInformation({ documents = [], workflows = [], requirements = [], keywords = [] } = {}) {
   const items = [];
 
   if (documents.length === 0) {
@@ -192,6 +201,24 @@ function inferMissingInformation({ documents = [], workflows = [], requirements 
     items.push(missingInfo(item[0], item[1], item[2]));
   }
 
+  if (keywords.includes("mine") || keywords.includes("minesweeper") || (keywords.includes("grid") && keywords.includes("tiles"))) {
+    items.unshift(
+      missingInfo(
+        "game_rules",
+        "Which minesweeper rules should apply (first-click safety, chord behavior, difficulty presets, scoring)?",
+        "Game rules are often under-specified and drive user expectations."
+      )
+    );
+  } else if (keywords.length > 0) {
+    items.unshift(
+      missingInfo(
+        "domain_assumptions",
+        `Confirm domain assumptions for: ${keywords.slice(0, 6).join(", ")}.`,
+        "The plan is derived from keywords; confirming intent prevents wrong workflows."
+      )
+    );
+  }
+
   return Object.freeze(items);
 }
 
@@ -244,3 +271,74 @@ function normalizeOptionalString(value) {
   return trimmed || null;
 }
 
+function extractKeywords(text) {
+  const normalized = String(text ?? "").toLowerCase();
+  const words = normalized
+    .replace(/[^a-z0-9\s-]+/g, " ")
+    .split(/\s+/g)
+    .map((word) => word.trim())
+    .filter(Boolean);
+
+  const stopwords = new Set([
+    "the",
+    "and",
+    "or",
+    "to",
+    "of",
+    "in",
+    "a",
+    "an",
+    "for",
+    "with",
+    "on",
+    "by",
+    "is",
+    "are",
+    "be",
+    "as",
+    "at",
+    "from",
+    "that",
+    "this",
+    "these",
+    "those",
+    "will",
+    "shall",
+    "must",
+    "should",
+    "can",
+    "may",
+    "include",
+    "including",
+    "provided",
+    "provide",
+    "user",
+    "users",
+    "system",
+    "application",
+    "app",
+    "project",
+    "work",
+    "scope",
+    "requirements",
+    "requirement"
+  ]);
+
+  const counts = new Map();
+  for (const word of words) {
+    if (word.length < 3) {
+      continue;
+    }
+
+    if (stopwords.has(word)) {
+      continue;
+    }
+
+    counts.set(word, (counts.get(word) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 12)
+    .map(([word]) => word);
+}

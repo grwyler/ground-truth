@@ -7,6 +7,7 @@ import {
 } from "../../../packages/domain/src/index.js";
 import {
   createLocalAiGenerationService,
+  createLocalDocumentService,
   createLocalProjectService
 } from "../../../apps/web/src/main.js";
 
@@ -14,7 +15,12 @@ const [programManager, engineeringLead, operatorRepresentative, customerPm] =
   SEEDED_MVP_USERS;
 
 test("local readiness dashboard explains seeded Not Ready state with blockers and overrides", () => {
-  const service = createLocalAiGenerationService();
+  const projectService = createLocalProjectService();
+  projectService.loadDemoSeedData(programManager);
+  const documentService = createLocalDocumentService();
+  documentService.loadDemoSeedData();
+  const service = createLocalAiGenerationService(projectService, documentService);
+  service.loadDemoSeedData();
   const dashboard = service.getReadinessDashboard("seed-project");
 
   assert.equal(dashboard.status, READINESS_STATUSES.NOT_READY);

@@ -101,22 +101,78 @@ export function renderAppShell(
   shell.append(content);
   container.append(shell);
 
-  renderProjectWorkspace(
-    workspace,
-    projectService.listProjects()[0] ?? null,
-    currentUser,
-    documentService,
-    aiGenerationService
-  );
+  const appState = {
+    activeProjectId: null
+  };
+
+  function rerenderActiveProject(selectedObjectId = null) {
+    const project = appState.activeProjectId
+      ? projectService.listProjects().find((candidate) => candidate.projectId === appState.activeProjectId)
+      : null;
+
+    if (!project) {
+      renderLanding(workspace, currentUser, {
+        onLoadDemoProject() {
+          projectService.loadDemoSeedData(currentUser.actor);
+          documentService.loadDemoSeedData(currentUser.actor);
+          aiGenerationService.loadDemoSeedData(currentUser.actor);
+          const first = projectService.listProjects()[0] ?? null;
+          appState.activeProjectId = first?.projectId ?? null;
+          rerenderActiveProject();
+        },
+        onSourceMaterialAdded(projectId) {
+          appState.activeProjectId = projectId;
+          rerenderActiveProject();
+        }
+      }, projectService, documentService);
+      return;
+    }
+
+    renderProjectWorkspace(
+      workspace,
+      project,
+      currentUser,
+      documentService,
+      aiGenerationService,
+      selectedObjectId
+    );
+  }
+
+  rerenderActiveProject();
 
   return shell;
 }
 
-export function createLocalProjectService(projects = createMvpSeedData().projects.map(toProjectSummary)) {
-  const projectState = [...projects];
+export function createLocalProjectService(projects = []) {
+  const projectState = [
+    ...projects.map((project) => (project?.projectId ? project : toProjectSummary(project)))
+  ];
 
   return Object.freeze({
     listProjects() {
+      return [...projectState];
+    },
+
+    loadDemoSeedData(actor) {
+      projectState.length = 0;
+      const seed = createMvpSeedData().projects.map(toProjectSummary);
+      for (const project of seed) {
+        projectState.push(project);
+      }
+
+      if (projectState.length === 0) {
+        this.createProject(
+          {
+            name: "Demo Project",
+            description: "",
+            customer: "",
+            contractNumber: "",
+            programName: ""
+          },
+          actor
+        );
+      }
+
       return [...projectState];
     },
 
@@ -144,16 +200,28 @@ export function createLocalProjectService(projects = createMvpSeedData().project
 }
 
 export function createLocalDocumentService(
-  documents = createMvpSeedData().documents.map(toDocumentSummary)
+  documents = []
 ) {
-  const documentState = [...documents];
+  const documentState = [
+    ...documents.map((document) => (document?.documentId ? document : toDocumentSummary(document)))
+  ];
 
   return Object.freeze({
     listDocuments(projectId) {
       return documentState.filter((document) => document.projectId === projectId);
     },
 
-    uploadDocuments(projectId, files, actor) {
+    loadDemoSeedData() {
+      documentState.length = 0;
+      const seed = createMvpSeedData().documents.map(toDocumentSummary);
+      for (const document of seed) {
+        documentState.push(document);
+      }
+
+      return [...documentState];
+    },
+
+    async uploadDocuments(projectId, files, actor) {
       const uploaded = [];
       const errors = [];
 
@@ -187,7 +255,22 @@ export function createLocalDocumentService(
           continue;
         }
 
-        const document = toDocumentSummary(result.document);
+        const baseDocument = toDocumentSummary(result.document);
+        let textContent = null;
+        if (typeof file.text === "function") {
+          try {
+            const text = await file.text();
+            textContent = text;
+          } catch (error) {
+            textContent = null;
+          }
+        } else if (typeof file.textContent === "string") {
+          textContent = file.textContent;
+        } else {
+          textContent = null;
+        }
+
+        const document = Object.freeze({ ...baseDocument, textContent });
         documentState.push(document);
         uploaded.push(document);
       }
@@ -201,7 +284,17 @@ export function createLocalAiGenerationService(
   projectService = createLocalProjectService(),
   documentService = createLocalDocumentService(),
   aiDraftAdapter = createDeterministicDraftAdapter(),
-  seedData = createMvpSeedData()
+  seedData = {
+    aiGenerationJobs: [],
+    decisionObjects: [],
+    decisionObjectVersions: [],
+    traceLinks: [],
+    approvals: [],
+    overrides: [],
+    certificationPackages: [],
+    jiraExports: [],
+    auditEvents: []
+  }
 ) {
   const jobs = [...(seedData.aiGenerationJobs ?? [])];
   const decisionObjects = [...(seedData.decisionObjects ?? [])];
@@ -212,6 +305,7 @@ export function createLocalAiGenerationService(
   const certificationPackages = [...(seedData.certificationPackages ?? [])];
   const jiraExports = [...(seedData.jiraExports ?? [])];
   const auditEvents = [...(seedData.auditEvents ?? [])];
+  const generationDebugByProjectId = new Map();
   let draftIdSequence = 0;
 
   function listDecisionObjects(projectId) {
@@ -506,6 +600,31 @@ export function createLocalAiGenerationService(
     listDecisionObjects,
 
     getGeneratedPlan,
+
+    loadDemoSeedData() {
+      const seed = createMvpSeedData();
+      jobs.length = 0;
+      decisionObjects.length = 0;
+      decisionObjectVersions.length = 0;
+      traceLinks.length = 0;
+      approvals.length = 0;
+      overrides.length = 0;
+      certificationPackages.length = 0;
+      jiraExports.length = 0;
+      auditEvents.length = 0;
+
+      jobs.push(...(seed.aiGenerationJobs ?? []));
+      decisionObjects.push(...(seed.decisionObjects ?? []));
+      decisionObjectVersions.push(...(seed.decisionObjectVersions ?? []));
+      traceLinks.push(...(seed.traceLinks ?? []));
+      approvals.push(...(seed.approvals ?? []));
+      overrides.push(...(seed.overrides ?? []));
+      certificationPackages.push(...(seed.certificationPackages ?? []));
+      jiraExports.push(...(seed.jiraExports ?? []));
+      auditEvents.push(...(seed.auditEvents ?? []));
+
+      return true;
+    },
 
     listAssignableOwners,
 
@@ -1008,6 +1127,11 @@ export function createLocalAiGenerationService(
           project: toProjectRecord(project),
           documents
         });
+        if (output?.debug) {
+          generationDebugByProjectId.set(projectId, output.debug);
+          console.log("[plan-generation] inputPreview:", output.debug.inputPreview);
+          console.log("[plan-generation] keywords:", output.debug.keywordCandidates);
+        }
         const normalized = normalizeAiDraftOutput(output, runningJob, AI_SYSTEM_ACTOR, {
           idGenerator: () => {
             draftIdSequence += 1;
@@ -1140,6 +1264,10 @@ export function createLocalAiGenerationService(
         .filter((event) => event.project_id === projectId)
         .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
         .map(toAuditEventSummary);
+    },
+
+    getLastGenerationDebug(projectId) {
+      return generationDebugByProjectId.get(projectId) ?? null;
     }
   });
 }
@@ -1255,6 +1383,7 @@ function renderProjectWorkspace(
       selectedObjectId
     );
   });
+  const drafts = aiGenerationService.listDecisionObjects(project.projectId);
   const planPanel = renderAiGenerationPanel(
     project,
     currentUser,
@@ -1272,24 +1401,264 @@ function renderProjectWorkspace(
     },
     selectedObjectId
   );
-  const jiraExportPanel = renderJiraExportPanel(project, currentUser, aiGenerationService, () => {
-    renderProjectWorkspace(
-      container,
-      project,
-      currentUser,
-      documentService,
-      aiGenerationService,
-      selectedObjectId
-    );
-  });
+  const jiraExportPanel =
+    drafts.length > 0
+      ? renderJiraExportPanel(project, currentUser, aiGenerationService, () => {
+          renderProjectWorkspace(
+            container,
+            project,
+            currentUser,
+            documentService,
+            aiGenerationService,
+            selectedObjectId
+          );
+        })
+      : null;
 
   container.append(
     heading,
     helper,
     planPanel,
-    jiraExportPanel,
     documentPanel
   );
+
+  if (jiraExportPanel) {
+    container.append(jiraExportPanel);
+  }
+}
+
+function renderLanding(
+  container,
+  currentUser,
+  { onLoadDemoProject, onSourceMaterialAdded } = {},
+  projectService,
+  documentService
+) {
+  container.innerHTML = "";
+
+  const landing = document.createElement("section");
+  landing.className = "landing";
+  landing.setAttribute("aria-label", "Plan generator landing");
+
+  const heading = document.createElement("h2");
+  heading.textContent = "Generate a Build Plan from a SOW";
+
+  const subtitle = document.createElement("p");
+  subtitle.className = "summary";
+  subtitle.textContent =
+    "Upload or paste contract docs, SOWs, legacy notes, or requirements to generate workflows, requirements, risks, and Jira-ready tickets.";
+
+  const checklist = document.createElement("ol");
+  checklist.className = "landing-checklist";
+  for (const step of [
+    "Step 1: Add source material",
+    "Step 2: Generate plan",
+    "Step 3: Review/edit plan",
+    "Step 4: Export Jira tickets"
+  ]) {
+    const item = document.createElement("li");
+    item.textContent = step;
+    checklist.append(item);
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "landing-grid";
+
+  const uploadCard = document.createElement("section");
+  uploadCard.className = "landing-card";
+  const uploadHeading = document.createElement("h3");
+  uploadHeading.textContent = "Upload Document";
+  const accepted = document.createElement("p");
+  accepted.className = "empty-state neutral";
+  accepted.textContent = "Accepted: PDF, DOCX, TXT";
+
+  const drop = document.createElement("div");
+  drop.className = "upload-dropzone";
+  drop.setAttribute("role", "button");
+  drop.setAttribute("tabindex", "0");
+  drop.setAttribute("aria-label", "Drag and drop documents here");
+  drop.textContent = "Drag and drop your SOW here";
+
+  const uploadForm = document.createElement("form");
+  uploadForm.className = "landing-upload-form";
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.multiple = true;
+  fileInput.accept = ".pdf,.docx,.txt";
+  fileInput.hidden = true;
+  const pickButton = document.createElement("button");
+  pickButton.type = "button";
+  pickButton.className = "secondary-action";
+  pickButton.textContent = "Choose files";
+  pickButton.addEventListener("click", () => fileInput.click());
+
+  const uploadError = document.createElement("p");
+  uploadError.className = "form-error";
+  uploadError.setAttribute("role", "alert");
+
+  uploadForm.append(fileInput, pickButton, uploadError);
+
+  function ensureProject(nameHint = "New Plan") {
+    const existing = projectService.listProjects()[0] ?? null;
+    if (existing) {
+      return existing;
+    }
+
+    if (!currentUser.canManageProject) {
+      return null;
+    }
+
+    return projectService.createProject(
+      {
+        name: nameHint,
+        customer: "",
+        contractNumber: "",
+        programName: "",
+        description: ""
+      },
+      currentUser.actor
+    );
+  }
+
+  async function handleFiles(fileList) {
+    uploadError.textContent = "";
+    const project = ensureProject(fileList?.[0]?.name ? `Plan: ${fileList[0].name}` : "New Plan");
+
+    if (!project) {
+      uploadError.textContent = "You do not have permission to create a project.";
+      return;
+    }
+
+    const { uploaded, errors } = await documentService.uploadDocuments(
+      project.projectId,
+      fileList,
+      currentUser.actor
+    );
+
+    if (errors.length > 0) {
+      uploadError.textContent = errors.join(" | ");
+      return;
+    }
+
+    if (uploaded.length === 0) {
+      uploadError.textContent = "No documents were uploaded.";
+      return;
+    }
+
+    onSourceMaterialAdded?.(project.projectId);
+  }
+
+  fileInput.addEventListener("change", async () => {
+    if (!fileInput.files || fileInput.files.length === 0) {
+      return;
+    }
+
+    await handleFiles(fileInput.files);
+  });
+
+  function setDropActive(active) {
+    drop.classList.toggle("active", active);
+  }
+
+  drop.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    setDropActive(true);
+  });
+  drop.addEventListener("dragleave", () => setDropActive(false));
+  drop.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    setDropActive(false);
+    if (event.dataTransfer?.files?.length) {
+      await handleFiles(event.dataTransfer.files);
+    }
+  });
+  drop.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      fileInput.click();
+    }
+  });
+  drop.addEventListener("click", () => fileInput.click());
+
+  uploadCard.append(uploadHeading, accepted, drop, uploadForm);
+
+  const pasteCard = document.createElement("section");
+  pasteCard.className = "landing-card";
+  const pasteHeading = document.createElement("h3");
+  pasteHeading.textContent = "Paste Text";
+  const pasteLabel = document.createElement("label");
+  pasteLabel.textContent = "Paste SOW or source text";
+  const pasteArea = document.createElement("textarea");
+  pasteArea.rows = 14;
+  pasteArea.placeholder = "Paste SOW language, legacy notes, or requirements here...";
+  pasteLabel.append(pasteArea);
+
+  const pasteError = document.createElement("p");
+  pasteError.className = "form-error";
+  pasteError.setAttribute("role", "alert");
+
+  const useText = document.createElement("button");
+  useText.type = "button";
+  useText.className = "secondary-action";
+  useText.textContent = "Use This Text";
+  useText.disabled = !currentUser.canManageProject;
+  useText.addEventListener("click", async () => {
+    pasteError.textContent = "";
+    const text = String(pasteArea.value ?? "").trim();
+
+    if (!text) {
+      pasteError.textContent = "Paste text is required.";
+      return;
+    }
+
+    const project = ensureProject("New Plan (pasted)");
+
+    if (!project) {
+      pasteError.textContent = "You do not have permission to create a project.";
+      return;
+    }
+
+    const pseudoFile = new File([text], `pasted-sow-${Date.now()}.txt`, { type: "text/plain" });
+
+    const { uploaded, errors } = await documentService.uploadDocuments(
+      project.projectId,
+      [pseudoFile],
+      currentUser.actor
+    );
+
+    if (errors.length > 0) {
+      pasteError.textContent = errors.join(" | ");
+      return;
+    }
+
+    if (uploaded.length === 0) {
+      pasteError.textContent = "Text document could not be created.";
+      return;
+    }
+
+    onSourceMaterialAdded?.(project.projectId);
+  });
+
+  pasteCard.append(pasteHeading, pasteLabel, pasteError, useText);
+
+  const demoCard = document.createElement("section");
+  demoCard.className = "landing-card";
+  const demoHeading = document.createElement("h3");
+  demoHeading.textContent = "Load Demo Project";
+  const demoText = document.createElement("p");
+  demoText.className = "empty-state neutral";
+  demoText.textContent = "Loads seeded sample data for quick demos/testing.";
+  const demoButton = document.createElement("button");
+  demoButton.type = "button";
+  demoButton.className = "secondary-action";
+  demoButton.textContent = "Load Demo Project";
+  demoButton.addEventListener("click", () => onLoadDemoProject?.());
+  demoCard.append(demoHeading, demoText, demoButton);
+
+  grid.append(uploadCard, pasteCard, demoCard);
+
+  landing.append(heading, subtitle, checklist, grid);
+  container.append(landing);
 }
 
 function createInput(label, name, required = false) {
@@ -1361,9 +1730,13 @@ function renderDocumentInventory(project, currentUser, documentService, onChange
     submit.textContent = "Upload Documents";
 
     form.append(input, error, submit);
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const result = documentService.uploadDocuments(project.projectId, input.files, currentUser.actor);
+      const result = await documentService.uploadDocuments(
+        project.projectId,
+        input.files,
+        currentUser.actor
+      );
 
       if (result.errors.length > 0) {
         error.textContent = result.errors.join(". ");
@@ -1469,6 +1842,11 @@ function renderAiGenerationPanel(
   const plan = aiGenerationService.getGeneratedPlan(project.projectId);
   if (plan) {
     panel.append(renderPlanSummaryView(plan));
+
+    const debug = aiGenerationService.getLastGenerationDebug(project.projectId);
+    if (debug) {
+      panel.append(renderPlanDebugPanel(debug));
+    }
     panel.append(renderPlanEditorView(project, currentUser, aiGenerationService, plan, onChange));
   }
 
@@ -1489,6 +1867,24 @@ function renderAiGenerationPanel(
   );
   panel.append(advanced);
   return panel;
+}
+
+function renderPlanDebugPanel(debug) {
+  const details = document.createElement("details");
+  details.className = "advanced-panel";
+  const summary = document.createElement("summary");
+  summary.textContent = "Debug (input text + extracted keywords)";
+
+  const preview = document.createElement("pre");
+  preview.className = "debug-preview";
+  preview.textContent = debug.inputPreview ?? "";
+
+  const keywords = document.createElement("p");
+  keywords.className = "approval-preview";
+  keywords.textContent = `Keywords: ${(debug.keywordCandidates ?? []).join(", ")}`;
+
+  details.append(summary, keywords, preview);
+  return details;
 }
 
 function renderPlanSummaryView(plan) {
@@ -3301,6 +3697,7 @@ function toDocumentRecord(document) {
     uploaded_by: document.uploadedBy,
     uploaded_at: document.uploadedAt,
     extracted_text_uri: document.extractedTextUri,
+    extracted_text: document.textContent ?? null,
     checksum: document.checksum
   };
 }

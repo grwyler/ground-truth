@@ -111,9 +111,9 @@ test("document repository persists documents without deleting existing inventory
   assert.equal(repository.listAuditEvents("project-1").length, 1);
 });
 
-test("local document service rejects unsupported files and enables generation after upload", () => {
+test("local document service rejects unsupported files and enables generation after upload", async () => {
   const service = createLocalDocumentService([]);
-  const rejected = service.uploadDocuments(
+  const rejected = await service.uploadDocuments(
     "project-1",
     [{ name: "bad.xlsx", size: 20 }],
     pm
@@ -123,9 +123,9 @@ test("local document service rejects unsupported files and enables generation af
   assert.equal(rejected.errors.length, 1);
   assert.equal(service.listDocuments("project-1").length, 0);
 
-  const accepted = service.uploadDocuments(
+  const accepted = await service.uploadDocuments(
     "project-1",
-    [{ name: "pilot.txt", size: 20 }],
+    [new File(["pilot sow"], "pilot.txt", { type: "text/plain" })],
     pm
   );
 
